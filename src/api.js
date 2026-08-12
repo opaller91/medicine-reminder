@@ -16,7 +16,7 @@ export async function registerLineUser(idToken) {
 
   if (!response.ok) {
     throw new Error(
-      result.error || "ไม่สามารถลงทะเบียนผู้ใช้ได้"
+        result.detail || result.error || "ลงทะเบียนไม่สำเร็จ"
     );
   }
 
