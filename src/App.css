@@ -1,77 +1,483 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap");
+
 * {
   box-sizing: border-box;
 }
 
+:root {
+  font-family: "Noto Sans Thai", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  color: #172334;
+  background: #f3f7f9;
+}
+
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f4f7fb;
+  font-family: "Noto Sans Thai", sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    linear-gradient(
+      180deg,
+      #eaf6fa 0%,
+      #f6f9fa 34%,
+      #f6f7f8 100%
+    );
 }
 
-.page {
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  padding: 24px 16px;
+button {
+  font: inherit;
 }
 
-.card {
+.app {
   width: 100%;
   max-width: 420px;
-  background: white;
-  border-radius: 24px;
-  padding: 28px 22px;
-  text-align: center;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.07);
+  min-height: 100vh;
+  margin: auto;
+  padding: 16px 15px 26px;
 }
 
-.pill {
-  font-size: 42px;
-  margin-bottom: 8px;
+/* HEADER */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2px 2px 16px;
 }
 
-h1 {
+.hello {
+  margin: 0 0 3px;
+  color: #8996a3;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.header h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 21px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-.subtitle {
-  color: #777;
-  margin-bottom: 26px;
-}
-
-.profile {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
+.avatar {
+  width: 43px;
+  height: 43px;
   object-fit: cover;
-  margin-top: 10px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  box-shadow: 0 3px 12px rgba(43, 78, 96, 0.15);
 }
 
-h2 {
-  font-size: 20px;
-}
+/* NEXT APPOINTMENT */
 
-.success {
-  background: #edf9f1;
-  color: #168647;
-  padding: 12px;
-  border-radius: 12px;
-  margin: 18px 0;
-}
-
-.activate {
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: 14px;
-  background: #06c755;
+.next-card {
+  padding: 16px;
+  border-radius: 20px;
   color: white;
-  font-size: 16px;
-  font-weight: bold;
+  background:
+    linear-gradient(
+      135deg,
+      #318fbd,
+      #57b8cc
+    );
+  box-shadow:
+    0 12px 26px rgba(44, 139, 184, 0.2);
+}
+
+.next-label {
+  margin-bottom: 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.next-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.date-box {
+  width: 54px;
+  height: 58px;
+  flex-shrink: 0;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 15px;
+}
+
+.date-box strong {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.date-box span {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.next-info h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.next-info p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.next-info small {
+  opacity: 0.82;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* CALENDAR */
+
+.calendar-card {
+  margin-top: 13px;
+  padding: 14px;
+  border-radius: 21px;
+  background: white;
+  box-shadow:
+    0 7px 24px rgba(41, 68, 82, 0.06);
+}
+
+.calendar-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 13px;
+}
+
+.calendar-heading strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.calendar-heading button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: #f2f6f8;
+  color: #647382;
+  font-size: 18px;
   cursor: pointer;
 }
 
+.week-days,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.week-days {
+  margin-bottom: 5px;
+}
+
+.week-days span {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 400;
+  color: #98a4af;
+}
+
+.calendar-grid {
+  row-gap: 4px;
+}
+
+.day {
+  position: relative;
+  min-height: 32px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #485563;
+}
+
+.empty {
+  min-height: 32px;
+}
+
+.day-order {
+  background: #fff4dd;
+  color: #ce8615;
+  font-weight: 600;
+}
+
+.day-pickup {
+  background: #e7f4fa;
+  color: #258ab7;
+  font-weight: 600;
+}
+
+.event-dot {
+  position: absolute;
+  bottom: 3px;
+
+  width: 4px;
+  height: 4px;
+
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.legend {
+  display: flex;
+  gap: 15px;
+
+  margin-top: 10px;
+  padding-top: 10px;
+
+  border-top: 1px solid #f0f2f4;
+
+  font-size: 10px;
+  color: #8a949f;
+}
+
+.legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.order-dot {
+  background: #e6a63e;
+}
+
+.pickup-dot {
+  background: #398eb5;
+}
+
+/* MEDICINE */
+
+.medicine-card {
+  margin-top: 13px;
+  padding: 15px;
+  border-radius: 20px;
+  background: white;
+  box-shadow:
+    0 7px 24px rgba(41, 68, 82, 0.06);
+}
+
+.medicine-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.medicine-icon {
+  width: 37px;
+  height: 37px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 12px;
+  background: #eaf7f3;
+  color: #279167;
+
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.medicine-header > div {
+  flex: 1;
+}
+
+.medicine-header small {
+  color: #929ca6;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.medicine-header h3 {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.days {
+  padding: 5px 8px;
+  border-radius: 20px;
+
+  background: #eef8f3;
+  color: #378b68;
+
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.medicine-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-top: 11px;
+  padding-top: 10px;
+
+  border-top: 1px solid #f0f2f4;
+}
+
+.medicine-bottom span {
+  color: #8c969f;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.medicine-bottom button {
+  border: 0;
+  background: transparent;
+  color: #298cb8;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* PENDING */
+
+.pending-card {
+  margin-top: 30px;
+  padding: 35px 22px;
+
+  text-align: center;
+
+  background: white;
+  border-radius: 25px;
+
+  box-shadow:
+    0 10px 30px rgba(41, 68, 82, 0.07);
+}
+
+.pending-icon {
+  width: 60px;
+  height: 60px;
+
+  margin: 0 auto 16px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 50%;
+
+  background: #eaf7f3;
+  color: #25936a;
+
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.pending-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pending-card p {
+  margin: 0 auto;
+  max-width: 260px;
+
+  color: #85909a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pending-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  margin-top: 18px;
+  padding: 7px 12px;
+
+  border-radius: 30px;
+
+  background: #fff5df;
+  color: #be821c;
+
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.pending-status span {
+  width: 6px;
+  height: 6px;
+
+  border-radius: 50%;
+  background: #e5a53c;
+}
+
+/* OTHER */
+
 .error {
-  color: #d32f2f;
+  margin-bottom: 10px;
+  padding: 9px;
+
+  background: #fff0f0;
+  color: #c54d4d;
+
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.loading-page {
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  gap: 10px;
+
+  color: #778591;
+  font-size: 12px;
+}
+
+.loader {
+  width: 28px;
+  height: 28px;
+
+  border: 3px solid #dbe8ed;
+  border-top-color: #3194bb;
+
+  border-radius: 50%;
+
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
