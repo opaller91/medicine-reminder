@@ -1,0 +1,77 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f7fb;
+}
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 24px;
+  padding: 28px 22px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.07);
+}
+
+.pill {
+  font-size: 42px;
+  margin-bottom: 8px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.subtitle {
+  color: #777;
+  margin-bottom: 26px;
+}
+
+.profile {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-top: 10px;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+.success {
+  background: #edf9f1;
+  color: #168647;
+  padding: 12px;
+  border-radius: 12px;
+  margin: 18px 0;
+}
+
+.activate {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 14px;
+  background: #06c755;
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.error {
+  color: #d32f2f;
+}
