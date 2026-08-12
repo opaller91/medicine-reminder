@@ -2,7 +2,7 @@ import liff from "@line/liff";
 
 export async function initializeLiff() {
   await liff.init({
-    liffId: import.meta.env.VITE_LIFF_ID,
+    liffId: "LIFF_ID_จริงของคุณ",
   });
 
   if (!liff.isLoggedIn()) {
@@ -11,11 +11,10 @@ export async function initializeLiff() {
   }
 
   const profile = await liff.getProfile();
-  const idToken = liff.getIDToken();
 
   return {
     profile,
-    idToken,
+    idToken: liff.getIDToken(),
   };
 }
 
