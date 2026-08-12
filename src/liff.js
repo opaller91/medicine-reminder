@@ -2,7 +2,7 @@ import liff from "@line/liff";
 
 export async function initializeLiff() {
   await liff.init({
-    liffId: "LIFF_ID_จริงของคุณ",
+    liffId: "2011081168-vX5joQV5",
   });
 
   if (!liff.isLoggedIn()) {
