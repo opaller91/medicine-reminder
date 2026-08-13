@@ -342,17 +342,48 @@ function ActiveCalendar({
     })
   );
 
-  const nextPickupItem = [...allOrders]
-    .filter(({ order }) => order.pickup_date)
+  const nextEvents = allOrders
+    .flatMap(
+      ({
+        medication,
+        order,
+        color,
+      }) => {
+        const events = [];
+
+        if (order.confirm_reminder_date) {
+          events.push({
+            type: "confirm",
+            date:
+              order.confirm_reminder_date,
+            medication,
+            order,
+            color,
+          });
+        }
+
+        if (order.pickup_date) {
+          events.push({
+            type: "pickup",
+            date: order.pickup_date,
+            medication,
+            order,
+            color,
+          });
+        }
+
+        return events;
+      }
+    )
     .sort((a, b) =>
-      a.order.pickup_date.localeCompare(
-        b.order.pickup_date
-      )
-    )[0];
+      a.date.localeCompare(b.date)
+    );
+
+  const nextEvent =
+    nextEvents[0] || null;
 
   const initialDateString =
-    nextPickupItem?.order?.confirm_reminder_date ||
-    nextPickupItem?.order?.pickup_date ||
+    nextEvent?.date ||
     new Date().toISOString().slice(0, 10);
 
   const initialCalendarDate =
@@ -470,10 +501,10 @@ function ActiveCalendar({
     return events;
   }
 
-  const nextPickup =
-    parseDateString(
-      nextPickupItem.order.pickup_date
-    );
+  const nextEventDate =
+    nextEvent
+      ? parseDateString(nextEvent.date)
+      : new Date();
 
   function getStatusMeta(status) {
     const map = {
@@ -515,46 +546,56 @@ function ActiveCalendar({
 
   return (
     <>
-      {/* NEXT APPOINTMENT */}
+      {/* NEXT EVENT */}
 
-      <section className="next-card">
-        <div className="next-label">
-          นัดครั้งถัดไป
-        </div>
-
-        <div className="next-row">
-          <div className="date-box">
-            <strong>
-              {nextPickup.getDate()}
-            </strong>
-
-            <span>
-              {shortMonth(
-                nextPickup.getMonth()
-              )}
-            </span>
+      {nextEvent && (
+        <section className="next-card">
+          <div className="next-label">
+            รายการถัดไป
           </div>
 
-          <div className="next-info">
-            <h2>นัดรับยา</h2>
+          <div className="next-row">
+            <div className="date-box">
+              <strong>
+                {nextEventDate.getDate()}
+              </strong>
 
-            <p>
-              {formatThaiDate(
-                nextPickupItem.order.pickup_date
-              )}
-            </p>
+              <span>
+                {shortMonth(
+                  nextEventDate.getMonth()
+                )}
+              </span>
+            </div>
 
-            <small>
-              {nextPickupItem.medication.drug_name}
-              {nextPickupItem.medication.strength
-                ? ` ${nextPickupItem.medication.strength}`
-                : ""}
-              {" • "}
-              {customer.branch_name || "-"}
-            </small>
+            <div className="next-info">
+              <h2>
+                {nextEvent.type === "confirm"
+                  ? "ยืนยันสั่งยา"
+                  : "นัดรับยา"}
+              </h2>
+
+              <p>
+                {nextEvent.medication.drug_name}
+
+                {nextEvent.medication.strength
+                  ? ` ${nextEvent.medication.strength}`
+                  : ""}
+              </p>
+
+              <small>
+                {formatThaiDate(
+                  nextEvent.date
+                )}
+
+                {" • "}
+
+                {customer.branch_name ||
+                  "-"}
+              </small>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* CALENDAR */}
 
