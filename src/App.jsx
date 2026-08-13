@@ -781,6 +781,7 @@ function ConfirmOrderPage({
   orderId,
   idToken,
   onRefresh,
+  onBackToCalendar,
 }) {
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess] = useState(false);
