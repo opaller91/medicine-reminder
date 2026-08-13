@@ -321,10 +321,24 @@ function ActiveCalendar({
     );
   }
 
+  const medicationColors = [
+    "#2f8fb8",
+    "#d58a2b",
+    "#4c9a73",
+    "#8b6bb5",
+    "#c95f78",
+    "#5d7d9a",
+  ];
+
   const allOrders = medications.map(
-    (medication) => ({
+    (medication, index) => ({
       medication,
       order: medication.latest_order,
+      color:
+        medicationColors[
+          index % medicationColors.length
+        ],
+      index,
     })
   );
 
@@ -411,7 +425,7 @@ function ActiveCalendar({
     calendarDays.push(day);
   }
 
-  function getEventType(day) {
+  function getDayEvents(day) {
     const current =
       `${year}-${String(
         month + 1
@@ -419,31 +433,85 @@ function ActiveCalendar({
         day
       ).padStart(2, "0")}`;
 
-    const hasPickup = allOrders.some(
-      ({ order }) =>
-        order.pickup_date === current
+    const events = [];
+
+    allOrders.forEach(
+      ({
+        medication,
+        order,
+        color,
+        index,
+      }) => {
+        if (
+          order.confirm_reminder_date ===
+          current
+        ) {
+          events.push({
+            type: "order",
+            medication,
+            color,
+            index,
+          });
+        }
+
+        if (
+          order.pickup_date === current
+        ) {
+          events.push({
+            type: "pickup",
+            medication,
+            color,
+            index,
+          });
+        }
+      }
     );
 
-    if (hasPickup) {
-      return "pickup";
-    }
-
-    const hasConfirmation = allOrders.some(
-      ({ order }) =>
-        order.confirm_reminder_date === current
-    );
-
-    if (hasConfirmation) {
-      return "order";
-    }
-
-    return null;
+    return events;
   }
 
   const nextPickup =
     parseDateString(
       nextPickupItem.order.pickup_date
     );
+
+  function getStatusMeta(status) {
+    const map = {
+      waiting_confirmation: {
+        text: "รอยืนยัน",
+        background: "#fff5df",
+        color: "#b67818",
+      },
+      confirmed: {
+        text: "ยืนยันแล้ว",
+        background: "#eaf7f0",
+        color: "#25885f",
+      },
+      ordered: {
+        text: "กำลังสั่งยา",
+        background: "#e8f3fb",
+        color: "#2a7fa8",
+      },
+      ready: {
+        text: "ยาพร้อมรับ",
+        background: "#e8f7f4",
+        color: "#238a72",
+      },
+      picked_up: {
+        text: "รับยาแล้ว",
+        background: "#eef1f3",
+        color: "#68747e",
+      },
+    };
+
+    return (
+      map[status] || {
+        text: status || "-",
+        background: "#eef1f3",
+        color: "#68747e",
+      }
+    );
+  }
 
   return (
     <>
@@ -532,23 +600,109 @@ function ActiveCalendar({
                 <Day
                   key={day}
                   value={day}
-                  type={getEventType(day)}
+                  events={getDayEvents(day)}
                 />
               );
             }
           )}
         </div>
 
-        <div className="legend">
-          <span>
-            <i className="dot order-dot" />
-            ยืนยันสั่งยา
-          </span>
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: "1px solid #f0f2f4",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              marginBottom: 9,
+              fontSize: 9,
+              color: "#8a949f",
+            }}
+          >
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <i
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: "#6f7d87",
+                  display: "inline-block",
+                }}
+              />
+              วันยืนยันสั่งยา
+            </span>
 
-          <span>
-            <i className="dot pickup-dot" />
-            นัดรับยา
-          </span>
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <i
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  border: "1.5px solid #6f7d87",
+                  background: "transparent",
+                  display: "inline-block",
+                }}
+              />
+              วันนัดรับยา
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "7px 12px",
+            }}
+          >
+            {allOrders.map(
+              ({
+                medication,
+                color,
+              }) => (
+                <span
+                  key={medication.id}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 9,
+                    color: "#687580",
+                  }}
+                >
+                  <i
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: color,
+                      display: "inline-block",
+                    }}
+                  />
+
+                  {medication.drug_name}
+                  {medication.strength
+                    ? ` ${medication.strength}`
+                    : ""}
+                </span>
+              )
+            )}
+          </div>
         </div>
       </section>
 
@@ -568,82 +722,87 @@ function ActiveCalendar({
       </div>
 
       {allOrders.map(
-        ({ medication, order }) => {
+        ({
+          medication,
+          order,
+          color,
+        }) => {
           const daysLeft =
             calculateDaysLeft(
               order.expected_runout_date
             );
 
+          const statusMeta =
+            getStatusMeta(order.status);
+
           return (
-            <div key={medication.id}>
-              <section className="medicine-card">
-                <div className="medicine-header">
-                  <span className="medicine-icon">
-                    +
-                  </span>
+            <section
+              key={medication.id}
+              className="medicine-card"
+              style={{
+                borderLeft:
+                  `3px solid ${color}`,
+              }}
+            >
+              <div className="medicine-header">
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    flexShrink: 0,
+                    borderRadius: "50%",
+                    background: color,
+                  }}
+                />
 
-                  <div>
-                    <small>
-                      ยาประจำของฉัน
-                    </small>
+                <div>
+                  <small>
+                    ยาประจำของฉัน
+                  </small>
 
-                    <h3>
-                      {medication.drug_name}
-                      {medication.strength
-                        ? ` ${medication.strength}`
-                        : ""}
-                    </h3>
-                  </div>
-
-                  <span className="days">
-                    {daysLeft >= 0
-                      ? `เหลือ ${daysLeft} วัน`
-                      : "ถึงรอบรับยา"}
-                  </span>
+                  <h3>
+                    {medication.drug_name}
+                    {medication.strength
+                      ? ` ${medication.strength}`
+                      : ""}
+                  </h3>
                 </div>
 
-                <div className="medicine-bottom">
-                  <span>
-                    จำนวน{" "}
-                    {medication.quantity || "-"}
-                  </span>
+                <span
+                  style={{
+                    padding: "5px 8px",
+                    borderRadius: 20,
+                    background:
+                      statusMeta.background,
+                    color:
+                      statusMeta.color,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {statusMeta.text}
+                </span>
+              </div>
 
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color:
-                        order.status === "confirmed"
-                          ? "#378b68"
-                          : order.status ===
-                            "waiting_confirmation"
-                          ? "#be821c"
-                          : "#687580",
-                    }}
-                  >
-                    {order.status === "confirmed"
-                      ? "✓ ยืนยันแล้ว"
-                      : order.status ===
-                        "waiting_confirmation"
-                      ? "รอยืนยัน"
-                      : order.status === "ordered"
-                      ? "กำลังสั่งยา"
-                      : order.status === "ready"
-                      ? "ยาพร้อมรับ"
-                      : order.status === "picked_up"
-                      ? "รับยาแล้ว"
-                      : order.status}
-                  </span>
-                </div>
-              </section>
+              <div className="medicine-bottom">
+                <span>
+                  จำนวน{" "}
+                  {medication.quantity || "-"}
+                </span>
 
-              <OrderStatusCard
-                order={order}
-                medication={medication}
-                idToken={idToken}
-                onRefresh={onRefresh}
-              />
-            </div>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "#8c969f",
+                  }}
+                >
+                  {daysLeft >= 0
+                    ? `เหลือ ${daysLeft} วัน`
+                    : "ถึงรอบรับยา"}
+                </span>
+              </div>
+            </section>
           );
         }
       )}
@@ -783,24 +942,74 @@ function OrderStatusCard({
 
 function Day({
   value,
-  type,
+  events = [],
 }) {
   return (
     <div
-      className={`day ${
-        type
-          ? `day-${type}`
-          : ""
-      }`}
+      className="day"
+      style={{
+        paddingBottom:
+          events.length > 0 ? 9 : 0,
+      }}
     >
       {value}
 
-      {type && (
-        <span className="event-dot" />
+      {events.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 3,
+            left: "50%",
+            transform:
+              "translateX(-50%)",
+            display: "flex",
+            gap: 2,
+            alignItems: "center",
+            justifyContent: "center",
+            maxWidth: "90%",
+          }}
+        >
+          {events.slice(0, 4).map(
+            (event, index) => (
+              <span
+                key={`${event.type}-${event.index}-${index}`}
+                title={`${event.medication.drug_name} - ${
+                  event.type === "order"
+                    ? "ยืนยันสั่งยา"
+                    : "นัดรับยา"
+                }`}
+                style={
+                  event.type === "order"
+                    ? {
+                        width: 5,
+                        height: 5,
+                        borderRadius:
+                          "50%",
+                        background:
+                          event.color,
+                        flexShrink: 0,
+                      }
+                    : {
+                        width: 6,
+                        height: 6,
+                        borderRadius:
+                          "50%",
+                        border:
+                          `1.5px solid ${event.color}`,
+                        background:
+                          "transparent",
+                        flexShrink: 0,
+                      }
+                }
+              />
+            )
+          )}
+        </div>
       )}
     </div>
   );
 }
+
 function ConfirmOrderPage({
   customer,
   orderId,
