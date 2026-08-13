@@ -1,24 +1,48 @@
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap");
-
 * {
   box-sizing: border-box;
 }
 
 :root {
-  font-family: "Noto Sans Thai", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+
   color: #172334;
   background: #f3f7f9;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font-family: "Noto Sans Thai", sans-serif;
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+
   font-weight: 400;
+
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
   background:
     linear-gradient(
       180deg,
@@ -28,84 +52,129 @@ body {
     );
 }
 
-button {
+button,
+input,
+textarea,
+select {
   font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app {
   width: 100%;
   max-width: 420px;
   min-height: 100vh;
-  margin: auto;
-  padding: 16px 15px 26px;
+
+  margin: 0 auto;
+
+  padding:
+    14px
+    15px
+    calc(24px + env(safe-area-inset-bottom));
 }
 
-/* HEADER */
+/* =========================
+   HEADER
+========================= */
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+
   margin: 2px 2px 16px;
 }
 
 .hello {
-  margin: 0 0 3px;
-  color: #8996a3;
+  margin: 0 0 4px;
+
+  color: #8a98a5;
+
   font-size: 13px;
+  line-height: 1.4;
   font-weight: 400;
 }
 
 .header h1 {
   margin: 0;
-  font-size: 21px;
-  line-height: 1.35;
+
+  max-width: 280px;
+
+  font-size: clamp(20px, 5.5vw, 23px);
+  line-height: 1.3;
   font-weight: 600;
+
   letter-spacing: 0;
+
+  overflow-wrap: anywhere;
 }
 
 .avatar {
-  width: 43px;
-  height: 43px;
+  width: 42px;
+  height: 42px;
+
+  flex-shrink: 0;
+
   object-fit: cover;
+
   border-radius: 50%;
+
   border: 3px solid #ffffff;
-  box-shadow: 0 3px 12px rgba(43, 78, 96, 0.15);
+
+  box-shadow:
+    0 3px 12px
+    rgba(43, 78, 96, 0.15);
 }
 
-/* NEXT APPOINTMENT */
+/* =========================
+   NEXT APPOINTMENT
+========================= */
 
 .next-card {
   padding: 16px;
+
   border-radius: 20px;
+
   color: white;
+
   background:
     linear-gradient(
       135deg,
       #318fbd,
       #57b8cc
     );
+
   box-shadow:
-    0 12px 26px rgba(44, 139, 184, 0.2);
+    0 10px 24px
+    rgba(44, 139, 184, 0.18);
 }
 
 .next-label {
-  margin-bottom: 10px;
+  margin-bottom: 11px;
+
   text-align: left;
+
   font-size: 12px;
+  line-height: 1.4;
   font-weight: 400;
-  opacity: 0.85;
+
+  opacity: 0.88;
 }
 
 .next-row {
   display: flex;
   align-items: center;
+
   gap: 14px;
 }
 
 .date-box {
   width: 54px;
   height: 58px;
+
   flex-shrink: 0;
 
   display: flex;
@@ -113,8 +182,13 @@ button {
   justify-content: center;
   align-items: center;
 
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background:
+    rgba(255, 255, 255, 0.14);
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.28);
+
   border-radius: 15px;
 }
 
@@ -125,68 +199,103 @@ button {
 }
 
 .date-box span {
-  margin-top: 4px;
+  margin-top: 5px;
+
   font-size: 11px;
+  line-height: 1.2;
   font-weight: 400;
 }
 
+.next-info {
+  min-width: 0;
+}
+
 .next-info h2 {
-  margin: 0 0 2px;
-  font-size: 18px;
-  line-height: 1.4;
+  margin: 0 0 3px;
+
+  font-size: 17px;
+  line-height: 1.35;
   font-weight: 600;
 }
 
 .next-info p {
   margin: 0 0 4px;
+
   font-size: 13px;
+  line-height: 1.4;
   font-weight: 400;
 }
 
 .next-info small {
-  opacity: 0.82;
+  display: block;
+
   font-size: 11px;
+  line-height: 1.4;
   font-weight: 400;
+
+  opacity: 0.82;
+
+  overflow-wrap: anywhere;
 }
 
-/* CALENDAR */
+/* =========================
+   CALENDAR
+========================= */
 
 .calendar-card {
   margin-top: 13px;
+
   padding: 14px;
+
   border-radius: 21px;
+
   background: white;
+
   box-shadow:
-    0 7px 24px rgba(41, 68, 82, 0.06);
+    0 7px 24px
+    rgba(41, 68, 82, 0.06);
 }
 
 .calendar-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
+
   margin-bottom: 13px;
 }
 
 .calendar-heading strong {
   font-size: 15px;
+  line-height: 1.35;
   font-weight: 600;
 }
 
 .calendar-heading button {
   width: 30px;
   height: 30px;
+
+  display: grid;
+  place-items: center;
+
   border: 0;
+
   border-radius: 9px;
+
   background: #f2f6f8;
   color: #647382;
+
   font-size: 18px;
+  line-height: 1;
+
   cursor: pointer;
 }
 
 .week-days,
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+
+  grid-template-columns:
+    repeat(7, 1fr);
 }
 
 .week-days {
@@ -195,26 +304,33 @@ button {
 
 .week-days span {
   text-align: center;
-  font-size: 10px;
-  font-weight: 400;
+
   color: #98a4af;
+
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 400;
 }
 
 .calendar-grid {
-  row-gap: 4px;
+  row-gap: 3px;
 }
 
 .day {
   position: relative;
+
   min-height: 32px;
 
   display: grid;
   place-items: center;
 
   border-radius: 10px;
-  font-size: 12px;
-  font-weight: 400;
+
   color: #485563;
+
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 400;
 }
 
 .empty {
@@ -223,49 +339,63 @@ button {
 
 .day-order {
   background: #fff4dd;
-  color: #ce8615;
+  color: #c98218;
+
   font-weight: 600;
 }
 
 .day-pickup {
   background: #e7f4fa;
   color: #258ab7;
+
   font-weight: 600;
 }
 
 .event-dot {
   position: absolute;
+
   bottom: 3px;
 
   width: 4px;
   height: 4px;
 
   border-radius: 50%;
+
   background: currentColor;
 }
 
 .legend {
   display: flex;
+
   gap: 15px;
 
   margin-top: 10px;
+
   padding-top: 10px;
 
-  border-top: 1px solid #f0f2f4;
+  border-top:
+    1px solid #f0f2f4;
+
+  color: #8a949f;
 
   font-size: 10px;
-  color: #8a949f;
+  line-height: 1.4;
+  font-weight: 400;
 }
 
 .legend span {
   display: flex;
   align-items: center;
+
   gap: 5px;
 }
 
 .dot {
   width: 7px;
   height: 7px;
+
+  flex-shrink: 0;
+
   border-radius: 50%;
 }
 
@@ -277,20 +407,28 @@ button {
   background: #398eb5;
 }
 
-/* MEDICINE */
+/* =========================
+   MEDICINE
+========================= */
 
 .medicine-card {
   margin-top: 13px;
+
   padding: 15px;
+
   border-radius: 20px;
+
   background: white;
+
   box-shadow:
-    0 7px 24px rgba(41, 68, 82, 0.06);
+    0 7px 24px
+    rgba(41, 68, 82, 0.06);
 }
 
 .medicine-header {
   display: flex;
   align-items: center;
+
   gap: 10px;
 }
 
@@ -298,43 +436,63 @@ button {
   width: 37px;
   height: 37px;
 
+  flex-shrink: 0;
+
   display: grid;
   place-items: center;
 
   border-radius: 12px;
+
   background: #eaf7f3;
   color: #279167;
 
   font-size: 20px;
+  line-height: 1;
   font-weight: 500;
 }
 
 .medicine-header > div {
+  min-width: 0;
+
   flex: 1;
 }
 
 .medicine-header small {
+  display: block;
+
   color: #929ca6;
+
   font-size: 10px;
+  line-height: 1.4;
   font-weight: 400;
 }
 
 .medicine-header h3 {
   margin: 2px 0 0;
+
+  color: #172334;
+
   font-size: 14px;
   line-height: 1.4;
   font-weight: 600;
+
+  overflow-wrap: anywhere;
 }
 
 .days {
   padding: 5px 8px;
+
+  flex-shrink: 0;
+
   border-radius: 20px;
 
   background: #eef8f3;
   color: #378b68;
 
   font-size: 10px;
+  line-height: 1.3;
   font-weight: 500;
+
   white-space: nowrap;
 }
 
@@ -343,45 +501,63 @@ button {
   align-items: center;
   justify-content: space-between;
 
+  gap: 10px;
+
   margin-top: 11px;
+
   padding-top: 10px;
 
-  border-top: 1px solid #f0f2f4;
+  border-top:
+    1px solid #f0f2f4;
 }
 
 .medicine-bottom span {
   color: #8c969f;
+
   font-size: 10px;
+  line-height: 1.4;
   font-weight: 400;
 }
 
 .medicine-bottom button {
+  padding: 3px 0;
+
   border: 0;
+
   background: transparent;
+
   color: #298cb8;
+
   font-size: 10px;
+  line-height: 1.4;
   font-weight: 600;
+
   cursor: pointer;
 }
 
-/* PENDING */
+/* =========================
+   PENDING
+========================= */
 
 .pending-card {
-  margin-top: 30px;
-  padding: 35px 22px;
+  margin-top: 24px;
+
+  padding: 32px 22px;
 
   text-align: center;
 
   background: white;
-  border-radius: 25px;
+
+  border-radius: 24px;
 
   box-shadow:
-    0 10px 30px rgba(41, 68, 82, 0.07);
+    0 10px 30px
+    rgba(41, 68, 82, 0.07);
 }
 
 .pending-icon {
-  width: 60px;
-  height: 60px;
+  width: 58px;
+  height: 58px;
 
   margin: 0 auto 16px;
 
@@ -393,31 +569,41 @@ button {
   background: #eaf7f3;
   color: #25936a;
 
-  font-size: 25px;
+  font-size: 24px;
+  line-height: 1;
   font-weight: 600;
 }
 
 .pending-card h2 {
   margin: 0 0 8px;
+
+  color: #172334;
+
   font-size: 18px;
+  line-height: 1.4;
   font-weight: 600;
 }
 
 .pending-card p {
+  max-width: 270px;
+
   margin: 0 auto;
-  max-width: 260px;
 
   color: #85909a;
+
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.65;
+  font-weight: 400;
 }
 
 .pending-status {
   display: inline-flex;
   align-items: center;
+
   gap: 6px;
 
   margin-top: 18px;
+
   padding: 7px 12px;
 
   border-radius: 30px;
@@ -426,6 +612,7 @@ button {
   color: #be821c;
 
   font-size: 10px;
+  line-height: 1.3;
   font-weight: 500;
 }
 
@@ -434,20 +621,26 @@ button {
   height: 6px;
 
   border-radius: 50%;
+
   background: #e5a53c;
 }
 
-/* OTHER */
+/* =========================
+   OTHER
+========================= */
 
 .error {
   margin-bottom: 10px;
-  padding: 9px;
+
+  padding: 10px 12px;
 
   background: #fff0f0;
   color: #c54d4d;
 
   border-radius: 10px;
-  font-size: 10px;
+
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .loading-page {
@@ -461,19 +654,33 @@ button {
   gap: 10px;
 
   color: #778591;
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .loader {
   width: 28px;
   height: 28px;
 
-  border: 3px solid #dbe8ed;
-  border-top-color: #3194bb;
+  border:
+    3px solid #dbe8ed;
+
+  border-top-color:
+    #3194bb;
 
   border-radius: 50%;
 
-  animation: spin 0.8s linear infinite;
+  animation:
+    spin 0.8s linear infinite;
 }
 
 @keyframes spin {
