@@ -237,20 +237,29 @@ function CustomerApp() {
    ACTIVE CALENDAR
 ========================================= */
 
-function ActiveCalendar({
-  customer,
-}) {
+function ActiveCalendar({ customer }) {
   const medication =
-    customer.medications?.[0] ||
-    null;
+    customer?.medications?.[0] || null;
 
   const order =
-    medication?.latest_order ||
-    null;
+    medication?.latest_order || null;
 
-  /*
-    ถ้าไม่มีข้อมูลยา/order
-  */
+  const initialDateString =
+    order?.confirm_reminder_date ||
+    order?.pickup_date ||
+    new Date().toISOString().slice(0, 10);
+
+  const initialCalendarDate =
+    parseDateString(initialDateString);
+
+  const [currentDate, setCurrentDate] =
+    useState(() =>
+      new Date(
+        initialCalendarDate.getFullYear(),
+        initialCalendarDate.getMonth(),
+        1
+      )
+    );
 
   if (!medication || !order) {
     return (
@@ -259,9 +268,7 @@ function ActiveCalendar({
           ✓
         </div>
 
-        <h2>
-          ยังไม่พบข้อมูลรอบยา
-        </h2>
+        <h2>ยังไม่พบข้อมูลรอบยา</h2>
 
         <p>
           กรุณาติดต่อเภสัชกร
@@ -270,28 +277,6 @@ function ActiveCalendar({
       </section>
     );
   }
-
-  /*
-    เปิด Calendar ที่เดือนของ
-    confirm date ก่อน
-  */
-
-  const initialCalendarDate =
-    parseDateString(
-      order.confirm_reminder_date ||
-        order.pickup_date
-    );
-
-  const [
-    currentDate,
-    setCurrentDate,
-  ] = useState(
-    new Date(
-      initialCalendarDate.getFullYear(),
-      initialCalendarDate.getMonth(),
-      1
-    )
-  );
 
   const year =
     currentDate.getFullYear();
