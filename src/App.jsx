@@ -76,6 +76,10 @@ function AdminApp() {
 
 function CustomerApp() {
   const PREVIEW_MODE = false;
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get("action");
+  const orderId = params.get("order");
+
 
   const [profile, setProfile] =
     useState(null);
@@ -239,14 +243,21 @@ function CustomerApp() {
         )}
       </header>
 
-      {calendarStatus ===
-        "active" &&
-      customer ? (
-        <ActiveCalendar
-          customer={customer}
-          idToken={lineIdToken}
-          onRefresh={refreshCalendar}
-        />
+      {calendarStatus === "active" && customer ? (
+        action === "confirm" && orderId ? (
+          <ConfirmOrderPage
+            customer={customer}
+            orderId={orderId}
+            idToken={lineIdToken}
+            onRefresh={refreshCalendar}
+          />
+        ) : (
+          <ActiveCalendar
+            customer={customer}
+            idToken={lineIdToken}
+            onRefresh={refreshCalendar}
+          />
+        )
       ) : (
         <PendingPage />
       )}
@@ -638,18 +649,13 @@ function OrderStatusCard({
     }
   }
 
-  if (
-    order.status ===
-    "waiting_confirmation"
-  ) {
+  if (order.status === "waiting_confirmation") {
     return (
       <section className="medicine-card">
-        <small>
-          สถานะรอบยา
-        </small>
+        <small>สถานะรอบยา</small>
 
         <h3>
-          ถึงรอบยืนยันการสั่งยา
+          รอการยืนยันสั่งยา
         </h3>
 
         <p
@@ -658,46 +664,11 @@ function OrderStatusCard({
             color: "#84919c",
           }}
         >
-          นัดรับยา{" "}
+          ระบบจะแจ้งเตือนผ่าน LINE วันที่{" "}
           {formatThaiDate(
-            order.pickup_date
+            order.confirm_reminder_date
           )}
         </p>
-
-        <button
-          onClick={handleConfirm}
-          disabled={confirming}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            padding: 13,
-            border: 0,
-            borderRadius: 12,
-            background: confirming
-              ? "#9fc8d8"
-              : "#258fbb",
-            color: "white",
-            fontWeight: 600,
-            cursor: confirming
-              ? "default"
-              : "pointer",
-          }}
-        >
-          {confirming
-            ? "กำลังยืนยัน..."
-            : "ยืนยันสั่งยา"}
-        </button>
-
-        {confirmError && (
-          <div
-            className="error"
-            style={{
-              marginTop: 10,
-            }}
-          >
-            {confirmError}
-          </div>
-        )}
       </section>
     );
   }
@@ -777,6 +748,187 @@ function Day({
         <span className="event-dot" />
       )}
     </div>
+  );
+}
+function ConfirmOrderPage({
+  customer,
+  orderId,
+  idToken,
+  onRefresh,
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
+  const medications =
+    customer.medications || [];
+
+  let selectedMedication = null;
+  let selectedOrder = null;
+
+  for (const medication of medications) {
+    const order = medication.latest_order;
+
+    if (order?.id === orderId) {
+      selectedMedication = medication;
+      selectedOrder = order;
+      break;
+    }
+  }
+
+  if (!selectedMedication || !selectedOrder) {
+    return (
+      <section className="pending-card">
+        <h2>ไม่พบรายการนี้</h2>
+
+        <p>
+          กรุณากลับไปที่ปฏิทินยา
+          หรือติดต่อเภสัชกร
+        </p>
+      </section>
+    );
+  }
+
+  async function handleConfirm() {
+    if (!idToken) {
+      setError(
+        "ไม่พบข้อมูล LINE กรุณาเปิดลิงก์ใหม่ผ่าน LINE"
+      );
+      return;
+    }
+
+    try {
+      setConfirming(true);
+      setError("");
+
+      await confirmOrder(
+        idToken,
+        selectedOrder.id
+      );
+
+      setSuccess(true);
+
+      await onRefresh();
+    } catch (err) {
+      console.error(
+        "CONFIRM ORDER ERROR:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "ไม่สามารถยืนยันการสั่งยาได้"
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  if (
+    success ||
+    selectedOrder.status === "confirmed"
+  ) {
+    return (
+      <section className="pending-card">
+        <div className="pending-icon">
+          ✓
+        </div>
+
+        <h2>ยืนยันเรียบร้อย</h2>
+
+        <p>
+          เภสัชกรได้รับคำขอสั่งยาแล้ว
+          และจะดำเนินการเตรียมยาตามรอบนัดหมาย
+        </p>
+
+        <div
+          style={{
+            marginTop: 18,
+            fontSize: 12,
+            color: "#687580",
+          }}
+        >
+          นัดรับยา{" "}
+          {formatThaiDate(
+            selectedOrder.pickup_date
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="medicine-card">
+      <small>
+        ยืนยันการสั่งยา
+      </small>
+
+      <h2
+        style={{
+          margin: "8px 0 4px",
+        }}
+      >
+        {selectedMedication.drug_name}
+        {selectedMedication.strength
+          ? ` ${selectedMedication.strength}`
+          : ""}
+      </h2>
+
+      <p
+        style={{
+          fontSize: 12,
+          color: "#84919c",
+        }}
+      >
+        นัดรับยา{" "}
+        {formatThaiDate(
+          selectedOrder.pickup_date
+        )}
+      </p>
+
+      <p
+        style={{
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: "#687580",
+        }}
+      >
+        กรุณายืนยันว่าต้องการสั่งยา
+        สำหรับรอบนัดหมายนี้
+      </p>
+
+      <button
+        onClick={handleConfirm}
+        disabled={confirming}
+        style={{
+          width: "100%",
+          marginTop: 12,
+          padding: 13,
+          border: 0,
+          borderRadius: 12,
+          background: confirming
+            ? "#9fc8d8"
+            : "#258fbb",
+          color: "white",
+          fontWeight: 600,
+        }}
+      >
+        {confirming
+          ? "กำลังยืนยัน..."
+          : "ยืนยันสั่งยา"}
+      </button>
+
+      {error && (
+        <div
+          className="error"
+          style={{
+            marginTop: 10,
+          }}
+        >
+          {error}
+        </div>
+      )}
+    </section>
   );
 }
 
