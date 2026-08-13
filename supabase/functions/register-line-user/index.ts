@@ -254,6 +254,115 @@ Deno.serve(async (req) => {
     }
 
     // ==============================
+    // ACTION : CONFIRM ORDER
+    // ==============================
+
+    if (action === "confirm_order") {
+    const { order_id } = requestBody;
+
+    if (!order_id) {
+        return json(
+        { error: "Missing order_id" },
+        400
+        );
+    }
+
+    // หา LINE user ที่กำลังเปิด LIFF
+    const {
+        data: lineUser,
+        error: lineUserError,
+    } = await supabase
+        .from("line_users")
+        .select("id, customer_id, status")
+        .eq("line_user_id", lineUserId)
+        .maybeSingle();
+
+    if (lineUserError) {
+        throw lineUserError;
+    }
+
+    if (
+        !lineUser ||
+        !lineUser.customer_id ||
+        lineUser.status !== "active"
+    ) {
+        return json(
+        { error: "ยังไม่ได้เชื่อมข้อมูลลูกค้า" },
+        403
+        );
+    }
+
+    // ตรวจว่า order นี้เป็นของ customer คนนี้จริง
+    const {
+        data: order,
+        error: orderError,
+    } = await supabase
+        .from("medication_orders")
+        .select(`
+        id,
+        customer_id,
+        status,
+        confirm_reminder_date,
+        pickup_date
+        `)
+        .eq("id", order_id)
+        .eq("customer_id", lineUser.customer_id)
+        .maybeSingle();
+
+    if (orderError) {
+        throw orderError;
+    }
+
+    if (!order) {
+        return json(
+        { error: "ไม่พบรอบยานี้" },
+        404
+        );
+    }
+
+    if (order.status === "confirmed") {
+        return json({
+        success: true,
+        already_confirmed: true,
+        order,
+        });
+    }
+
+    if (order.status !== "waiting_confirmation") {
+        return json(
+        {
+            error:
+            "รอบยานี้ไม่อยู่ในสถานะที่ยืนยันได้",
+        },
+        409
+        );
+    }
+
+    // update จริง
+    const {
+        data: updatedOrder,
+        error: updateError,
+    } = await supabase
+        .from("medication_orders")
+        .update({
+        status: "confirmed",
+        confirmed_at:
+            new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .select()
+        .single();
+
+    if (updateError) {
+        throw updateError;
+    }
+
+    return json({
+        success: true,
+        order: updatedOrder,
+    });
+    }
+    // ==============================
     // ACTION : REGISTER LINE USER
     // ==============================
 

@@ -79,3 +79,41 @@ export async function getCalendar(idToken) {
 
   return result;
 }
+
+export async function confirmOrder(
+  idToken,
+  orderId
+) {
+  const response = await fetch(
+    FUNCTION_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        action: "confirm_order",
+        idToken,
+        order_id: orderId,
+      }),
+    }
+  );
+
+  const result =
+    await response.json();
+
+  console.log(
+    "CONFIRM ORDER RESULT:",
+    result
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      result.error ||
+        "ไม่สามารถยืนยันการสั่งยาได้"
+    );
+  }
+
+  return result;
+}

@@ -3,6 +3,7 @@ import { initializeLiff } from "./liff";
 import {
   registerLineUser,
   getCalendar,
+  confirmOrder,
 } from "./api";
 
 import AdminLogin from "./AdminLogin";
@@ -90,6 +91,9 @@ function CustomerApp() {
   const [loading, setLoading] =
     useState(true);
 
+  const [lineIdToken, setLineIdToken] =
+  useState(null);
+
   const [error, setError] =
     useState("");
 
@@ -107,13 +111,15 @@ function CustomerApp() {
         /* 1. INIT LIFF */
 
         const result =
-          await initializeLiff();
+        await initializeLiff();
 
         if (!result) {
           return;
         }
 
         setProfile(result.profile);
+        setLineIdToken(result.idToken);
+
 
         /* 2. REGISTER / UPDATE LINE USER */
 
@@ -169,7 +175,20 @@ function CustomerApp() {
 
     start();
   }, []);
+  async function refreshCalendar() {
+    if (!lineIdToken) return;
 
+    const calendar =
+      await getCalendar(lineIdToken);
+
+    setCalendarStatus(calendar.status);
+
+    if (calendar.status === "active") {
+      setCustomer(calendar.customer);
+    } else {
+      setCustomer(null);
+    }
+  }
   /* LOADING */
 
   if (loading) {
@@ -225,6 +244,8 @@ function CustomerApp() {
       customer ? (
         <ActiveCalendar
           customer={customer}
+          idToken={lineIdToken}
+          onRefresh={refreshCalendar}
         />
       ) : (
         <PendingPage />
@@ -237,7 +258,11 @@ function CustomerApp() {
    ACTIVE CALENDAR
 ========================================= */
 
-function ActiveCalendar({ customer }) {
+function ActiveCalendar({
+  customer,
+  idToken,
+  onRefresh,
+}) {
   const medication =
     customer?.medications?.[0] || null;
 
@@ -557,6 +582,8 @@ function ActiveCalendar({ customer }) {
       <OrderStatusCard
         order={order}
         medication={medication}
+        idToken={idToken}
+        onRefresh={onRefresh}
       />
     </>
   );
@@ -569,21 +596,60 @@ function ActiveCalendar({ customer }) {
 function OrderStatusCard({
   order,
   medication,
+  idToken,
+  onRefresh,
 }) {
+  const [confirming, setConfirming] =
+    useState(false);
+
+  const [confirmError, setConfirmError] =
+    useState("");
+
+  async function handleConfirm() {
+    if (!idToken) {
+      setConfirmError(
+        "ไม่พบข้อมูล LINE กรุณาเปิดใหม่ผ่าน LINE"
+      );
+      return;
+    }
+
+    try {
+      setConfirming(true);
+      setConfirmError("");
+
+      await confirmOrder(
+        idToken,
+        order.id
+      );
+
+      await onRefresh();
+    } catch (err) {
+      console.error(
+        "CONFIRM ORDER ERROR:",
+        err
+      );
+
+      setConfirmError(
+        err?.message ||
+          "ไม่สามารถยืนยันการสั่งยาได้"
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   if (
     order.status ===
     "waiting_confirmation"
   ) {
     return (
-      <section
-        className="medicine-card"
-      >
+      <section className="medicine-card">
         <small>
           สถานะรอบยา
         </small>
 
         <h3>
-          รอยืนยันการสั่งยา
+          ถึงรอบยืนยันการสั่งยา
         </h3>
 
         <p
@@ -592,22 +658,53 @@ function OrderStatusCard({
             color: "#84919c",
           }}
         >
-          ระบบจะแจ้งเตือนวันที่{" "}
+          นัดรับยา{" "}
           {formatThaiDate(
-            order.confirm_reminder_date
+            order.pickup_date
           )}
         </p>
+
+        <button
+          onClick={handleConfirm}
+          disabled={confirming}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            padding: 13,
+            border: 0,
+            borderRadius: 12,
+            background: confirming
+              ? "#9fc8d8"
+              : "#258fbb",
+            color: "white",
+            fontWeight: 600,
+            cursor: confirming
+              ? "default"
+              : "pointer",
+          }}
+        >
+          {confirming
+            ? "กำลังยืนยัน..."
+            : "ยืนยันสั่งยา"}
+        </button>
+
+        {confirmError && (
+          <div
+            className="error"
+            style={{
+              marginTop: 10,
+            }}
+          >
+            {confirmError}
+          </div>
+        )}
       </section>
     );
   }
 
-  if (
-    order.status === "confirmed"
-  ) {
+  if (order.status === "confirmed") {
     return (
-      <section
-        className="medicine-card"
-      >
+      <section className="medicine-card">
         <strong>
           ✓ ยืนยันสั่งยาแล้ว
         </strong>
@@ -618,8 +715,7 @@ function OrderStatusCard({
             color: "#84919c",
           }}
         >
-          เภสัชกรกำลังดำเนินการ
-          เตรียม{" "}
+          เภสัชกรกำลังดำเนินการเตรียม{" "}
           {medication.drug_name}
         </p>
       </section>
@@ -628,9 +724,7 @@ function OrderStatusCard({
 
   if (order.status === "ordered") {
     return (
-      <section
-        className="medicine-card"
-      >
+      <section className="medicine-card">
         <strong>
           กำลังดำเนินการสั่งยา
         </strong>
@@ -640,9 +734,7 @@ function OrderStatusCard({
 
   if (order.status === "ready") {
     return (
-      <section
-        className="medicine-card"
-      >
+      <section className="medicine-card">
         <strong>
           ✓ ยาพร้อมรับแล้ว
         </strong>
@@ -650,13 +742,9 @@ function OrderStatusCard({
     );
   }
 
-  if (
-    order.status === "picked_up"
-  ) {
+  if (order.status === "picked_up") {
     return (
-      <section
-        className="medicine-card"
-      >
+      <section className="medicine-card">
         <strong>
           ✓ รับยาเรียบร้อยแล้ว
         </strong>
