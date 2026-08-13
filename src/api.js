@@ -1,12 +1,22 @@
+const FUNCTION_URL =
+  "https://uhvcakajcdxkykopekgg.supabase.co/functions/v1/register-line-user";
+
+// ==============================
+// REGISTER LINE USER
+// ==============================
+
 export async function registerLineUser(idToken) {
   const response = await fetch(
-    "https://uhvcakajcdxkykopekgg.supabase.co/functions/v1/register-line-user",
+    FUNCTION_URL,
     {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify({
+        action: "register",
         idToken,
       }),
     }
@@ -14,9 +24,56 @@ export async function registerLineUser(idToken) {
 
   const result = await response.json();
 
+  console.log(
+    "REGISTER RESULT:",
+    result
+  );
+
   if (!response.ok) {
     throw new Error(
-        result.detail || result.error || "ลงทะเบียนไม่สำเร็จ"
+      result.detail ||
+        result.error ||
+        "ลงทะเบียนไม่สำเร็จ"
+    );
+  }
+
+  return result;
+}
+
+
+// ==============================
+// GET CUSTOMER CALENDAR
+// ==============================
+
+export async function getCalendar(idToken) {
+  const response = await fetch(
+    FUNCTION_URL,
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        action: "get_calendar",
+        idToken,
+      }),
+    }
+  );
+
+  const result = await response.json();
+
+  console.log(
+    "CALENDAR RESULT:",
+    result
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      result.detail ||
+        result.error ||
+        "ไม่สามารถโหลดปฏิทินยาได้"
     );
   }
 

@@ -1,59 +1,166 @@
 import { useEffect, useState } from "react";
 import { initializeLiff } from "./liff";
-import { registerLineUser } from "./api";
+import {
+  registerLineUser,
+  getCalendar,
+} from "./api";
+
+import AdminLogin from "./AdminLogin";
+import AdminDashboard from "./AdminDashboard";
+import { supabase } from "./supabase";
+
 import "./App.css";
 
 function App() {
-  const PREVIEW_MODE = false;
+  const isAdmin =
+    window.location.pathname === "/admin";
 
-  const mockProfile = {
-    displayName: "สมหญิง ใจดี",
-    pictureUrl: "https://placehold.co/100x100",
-  };
+  if (isAdmin) {
+    return <AdminApp />;
+  }
 
-  const mockCustomer = {
-    status: "active",
-    nextPickupDate: "30 ส.ค. 2569",
-    branch: "eXta Plus สาขาระเบาะไผ่",
-    medication: "Metformin 500 mg",
-    quantity: "60 เม็ด",
-    daysLeft: 18,
-  };
+  return <CustomerApp />;
+}
 
-  const [profile, setProfile] = useState(
-    PREVIEW_MODE ? mockProfile : null
-  );
+/* =========================================
+   ADMIN
+========================================= */
 
-  const [customer] = useState(
-    PREVIEW_MODE ? mockCustomer : null
-  );
+function AdminApp() {
+  const [adminSession, setAdminSession] =
+    useState(null);
 
-  const [loading, setLoading] = useState(!PREVIEW_MODE);
-  const [error, setError] = useState("");
+  const [checkingAdmin, setCheckingAdmin] =
+    useState(true);
 
   useEffect(() => {
-    if (PREVIEW_MODE) return;
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setAdminSession(data.session);
+        setCheckingAdmin(false);
+      });
+
+    const {
+      data: { subscription },
+    } =
+      supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          setAdminSession(session);
+        }
+      );
+
+    return () =>
+      subscription.unsubscribe();
+  }, []);
+
+  if (checkingAdmin) {
+    return <div>กำลังโหลด...</div>;
+  }
+
+  if (!adminSession) {
+    return (
+      <AdminLogin
+        onLogin={setAdminSession}
+      />
+    );
+  }
+
+  return <AdminDashboard />;
+}
+
+/* =========================================
+   CUSTOMER LIFF
+========================================= */
+
+function CustomerApp() {
+  const PREVIEW_MODE = false;
+
+  const [profile, setProfile] =
+    useState(null);
+
+  const [customer, setCustomer] =
+    useState(null);
+
+  const [
+    calendarStatus,
+    setCalendarStatus,
+  ] = useState("loading");
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  useEffect(() => {
+    if (PREVIEW_MODE) {
+      setLoading(false);
+      return;
+    }
 
     async function start() {
       try {
-        const result = await initializeLiff();
+        setLoading(true);
+        setError("");
 
-        if (result) {
-          setProfile(result.profile);
+        /* 1. INIT LIFF */
 
-          const registered = await registerLineUser(
+        const result =
+          await initializeLiff();
+
+        if (!result) {
+          return;
+        }
+
+        setProfile(result.profile);
+
+        /* 2. REGISTER / UPDATE LINE USER */
+
+        const registered =
+          await registerLineUser(
             result.idToken
           );
 
-          console.log(
-            "REGISTERED USER:",
-            registered.user
+        console.log(
+          "REGISTER RESULT:",
+          registered
+        );
+
+        /* 3. GET REAL CALENDAR */
+
+        const calendar =
+          await getCalendar(
+            result.idToken
           );
+
+        console.log(
+          "CALENDAR RESULT:",
+          calendar
+        );
+
+        setCalendarStatus(
+          calendar.status
+        );
+
+        if (
+          calendar.status === "active"
+        ) {
+          setCustomer(
+            calendar.customer
+          );
+        } else {
+          setCustomer(null);
         }
       } catch (err) {
-        console.error(err);
+        console.error(
+          "CUSTOMER APP ERROR:",
+          err
+        );
+
         setError(
-          err?.message || "ไม่สามารถเชื่อมต่อ LINE ได้"
+          err?.message ||
+            "ไม่สามารถโหลดข้อมูลได้"
         );
       } finally {
         setLoading(false);
@@ -63,12 +170,29 @@ function App() {
     start();
   }, []);
 
+  /* LOADING */
+
   if (loading) {
     return (
       <div className="loading-page">
         <div className="loader" />
-        <span>กำลังโหลดปฏิทินยา...</span>
+
+        <span>
+          กำลังโหลดปฏิทินยา...
+        </span>
       </div>
+    );
+  }
+
+  /* ERROR */
+
+  if (error) {
+    return (
+      <main className="app">
+        <div className="error">
+          {error}
+        </div>
+      </main>
     );
   }
 
@@ -81,7 +205,9 @@ function App() {
           </p>
 
           <h1>
-            {profile?.displayName || "ผู้ใช้งาน"}
+            {customer?.full_name ||
+              profile?.displayName ||
+              "ผู้ใช้งาน"}
           </h1>
         </div>
 
@@ -94,28 +220,84 @@ function App() {
         )}
       </header>
 
-      {error && (
-        <div className="error">
-          {error}
-        </div>
-      )}
-
-      {!customer || customer.status === "pending" ? (
-        <PendingPage />
+      {calendarStatus ===
+        "active" &&
+      customer ? (
+        <ActiveCalendar
+          customer={customer}
+        />
       ) : (
-        <ActiveCalendar customer={customer} />
+        <PendingPage />
       )}
     </main>
   );
 }
 
-function ActiveCalendar({ customer }) {
-  const [currentDate, setCurrentDate] = useState(
-    new Date(2026, 7, 1)
+/* =========================================
+   ACTIVE CALENDAR
+========================================= */
+
+function ActiveCalendar({
+  customer,
+}) {
+  const medication =
+    customer.medications?.[0] ||
+    null;
+
+  const order =
+    medication?.latest_order ||
+    null;
+
+  /*
+    ถ้าไม่มีข้อมูลยา/order
+  */
+
+  if (!medication || !order) {
+    return (
+      <section className="pending-card">
+        <div className="pending-icon">
+          ✓
+        </div>
+
+        <h2>
+          ยังไม่พบข้อมูลรอบยา
+        </h2>
+
+        <p>
+          กรุณาติดต่อเภสัชกร
+          เพื่อตรวจสอบข้อมูลยา
+        </p>
+      </section>
+    );
+  }
+
+  /*
+    เปิด Calendar ที่เดือนของ
+    confirm date ก่อน
+  */
+
+  const initialCalendarDate =
+    parseDateString(
+      order.confirm_reminder_date ||
+        order.pickup_date
+    );
+
+  const [
+    currentDate,
+    setCurrentDate,
+  ] = useState(
+    new Date(
+      initialCalendarDate.getFullYear(),
+      initialCalendarDate.getMonth(),
+      1
+    )
   );
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
+  const year =
+    currentDate.getFullYear();
+
+  const month =
+    currentDate.getMonth();
 
   const monthNames = [
     "มกราคม",
@@ -132,50 +314,87 @@ function ActiveCalendar({ customer }) {
     "ธันวาคม",
   ];
 
-  const thaiYear = year + 543;
+  const thaiYear =
+    year + 543;
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(
-    year,
-    month + 1,
-    0
-  ).getDate();
+  const firstDay =
+    new Date(
+      year,
+      month,
+      1
+    ).getDay();
+
+  const daysInMonth =
+    new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
 
   function prevMonth() {
     setCurrentDate(
-      new Date(year, month - 1, 1)
+      new Date(
+        year,
+        month - 1,
+        1
+      )
     );
   }
 
   function nextMonth() {
     setCurrentDate(
-      new Date(year, month + 1, 1)
+      new Date(
+        year,
+        month + 1,
+        1
+      )
     );
   }
 
+  /*
+    สร้างช่องปฏิทิน
+  */
+
   const calendarDays = [];
 
-  for (let i = 0; i < firstDay; i++) {
+  for (
+    let i = 0;
+    i < firstDay;
+    i++
+  ) {
     calendarDays.push(null);
   }
 
-  for (let day = 1; day <= daysInMonth; day++) {
+  for (
+    let day = 1;
+    day <= daysInMonth;
+    day++
+  ) {
     calendarDays.push(day);
   }
 
+  /*
+    วันที่ Event จริงจาก Supabase
+  */
+
   function getEventType(day) {
+    const current =
+      `${year}-${String(
+        month + 1
+      ).padStart(2, "0")}-${String(
+        day
+      ).padStart(2, "0")}`;
+
     if (
-      year === 2026 &&
-      month === 7 &&
-      day === 16
+      current ===
+      order.confirm_reminder_date
     ) {
       return "order";
     }
 
     if (
-      year === 2026 &&
-      month === 7 &&
-      day === 30
+      current ===
+      order.pickup_date
     ) {
       return "pickup";
     }
@@ -183,8 +402,20 @@ function ActiveCalendar({ customer }) {
     return null;
   }
 
+  const pickup =
+    parseDateString(
+      order.pickup_date
+    );
+
+  const daysLeft =
+    calculateDaysLeft(
+      order.expected_runout_date
+    );
+
   return (
     <>
+      {/* NEXT APPOINTMENT */}
+
       <section className="next-card">
         <div className="next-label">
           นัดครั้งถัดไป
@@ -192,29 +423,54 @@ function ActiveCalendar({ customer }) {
 
         <div className="next-row">
           <div className="date-box">
-            <strong>30</strong>
-            <span>ส.ค.</span>
+            <strong>
+              {pickup.getDate()}
+            </strong>
+
+            <span>
+              {shortMonth(
+                pickup.getMonth()
+              )}
+            </span>
           </div>
 
           <div className="next-info">
-            <h2>นัดรับยา</h2>
-            <p>{customer.nextPickupDate}</p>
-            <small>{customer.branch}</small>
+            <h2>
+              นัดรับยา
+            </h2>
+
+            <p>
+              {formatThaiDate(
+                order.pickup_date
+              )}
+            </p>
+
+            <small>
+              {customer.branch_name ||
+                "-"}
+            </small>
           </div>
         </div>
       </section>
 
+      {/* CALENDAR */}
+
       <section className="calendar-card">
         <div className="calendar-heading">
-          <button onClick={prevMonth}>
+          <button
+            onClick={prevMonth}
+          >
             ‹
           </button>
 
           <strong>
-            {monthNames[month]} {thaiYear}
+            {monthNames[month]}{" "}
+            {thaiYear}
           </strong>
 
-          <button onClick={nextMonth}>
+          <button
+            onClick={nextMonth}
+          >
             ›
           </button>
         </div>
@@ -230,38 +486,46 @@ function ActiveCalendar({ customer }) {
         </div>
 
         <div className="calendar-grid">
-          {calendarDays.map((day, index) => {
-            if (!day) {
+          {calendarDays.map(
+            (day, index) => {
+              if (!day) {
+                return (
+                  <span
+                    className="empty"
+                    key={`empty-${index}`}
+                  />
+                );
+              }
+
               return (
-                <span
-                  className="empty"
-                  key={`empty-${index}`}
+                <Day
+                  key={day}
+                  value={day}
+                  type={getEventType(
+                    day
+                  )}
                 />
               );
             }
-
-            return (
-              <Day
-                key={day}
-                value={day}
-                type={getEventType(day)}
-              />
-            );
-          })}
+          )}
         </div>
 
         <div className="legend">
           <span>
             <i className="dot order-dot" />
+
             ยืนยันสั่งยา
           </span>
 
           <span>
             <i className="dot pickup-dot" />
+
             นัดรับยา
           </span>
         </div>
       </section>
+
+      {/* MEDICATION */}
 
       <section className="medicine-card">
         <div className="medicine-header">
@@ -275,18 +539,26 @@ function ActiveCalendar({ customer }) {
             </small>
 
             <h3>
-              {customer.medication}
+              {medication.drug_name}
+
+              {medication.strength
+                ? ` ${medication.strength}`
+                : ""}
             </h3>
           </div>
 
           <span className="days">
-            เหลือ {customer.daysLeft} วัน
+            {daysLeft >= 0
+              ? `เหลือ ${daysLeft} วัน`
+              : "ถึงรอบรับยา"}
           </span>
         </div>
 
         <div className="medicine-bottom">
           <span>
-            จำนวน {customer.quantity}
+            จำนวน{" "}
+            {medication.quantity ||
+              "-"}
           </span>
 
           <button>
@@ -294,15 +566,136 @@ function ActiveCalendar({ customer }) {
           </button>
         </div>
       </section>
+
+      {/* STATUS */}
+
+      <OrderStatusCard
+        order={order}
+        medication={medication}
+      />
     </>
   );
 }
 
-function Day({ value, type }) {
+/* =========================================
+   ORDER STATUS
+========================================= */
+
+function OrderStatusCard({
+  order,
+  medication,
+}) {
+  if (
+    order.status ===
+    "waiting_confirmation"
+  ) {
+    return (
+      <section
+        className="medicine-card"
+      >
+        <small>
+          สถานะรอบยา
+        </small>
+
+        <h3>
+          รอยืนยันการสั่งยา
+        </h3>
+
+        <p
+          style={{
+            fontSize: 11,
+            color: "#84919c",
+          }}
+        >
+          ระบบจะแจ้งเตือนวันที่{" "}
+          {formatThaiDate(
+            order.confirm_reminder_date
+          )}
+        </p>
+      </section>
+    );
+  }
+
+  if (
+    order.status === "confirmed"
+  ) {
+    return (
+      <section
+        className="medicine-card"
+      >
+        <strong>
+          ✓ ยืนยันสั่งยาแล้ว
+        </strong>
+
+        <p
+          style={{
+            fontSize: 11,
+            color: "#84919c",
+          }}
+        >
+          เภสัชกรกำลังดำเนินการ
+          เตรียม{" "}
+          {medication.drug_name}
+        </p>
+      </section>
+    );
+  }
+
+  if (order.status === "ordered") {
+    return (
+      <section
+        className="medicine-card"
+      >
+        <strong>
+          กำลังดำเนินการสั่งยา
+        </strong>
+      </section>
+    );
+  }
+
+  if (order.status === "ready") {
+    return (
+      <section
+        className="medicine-card"
+      >
+        <strong>
+          ✓ ยาพร้อมรับแล้ว
+        </strong>
+      </section>
+    );
+  }
+
+  if (
+    order.status === "picked_up"
+  ) {
+    return (
+      <section
+        className="medicine-card"
+      >
+        <strong>
+          ✓ รับยาเรียบร้อยแล้ว
+        </strong>
+      </section>
+    );
+  }
+
+  return null;
+}
+
+/* =========================================
+   DAY
+========================================= */
+
+function Day({
+  value,
+  type,
+}) {
   return (
     <div
       className={`day ${
-        type ? `day-${type}` : ""
+        type
+          ? `day-${type}`
+          : ""
       }`}
     >
       {value}
@@ -313,6 +706,10 @@ function Day({ value, type }) {
     </div>
   );
 }
+
+/* =========================================
+   PENDING
+========================================= */
 
 function PendingPage() {
   return (
@@ -332,9 +729,133 @@ function PendingPage() {
 
       <div className="pending-status">
         <span />
+
         รอเชื่อมข้อมูล
       </div>
     </section>
+  );
+}
+
+/* =========================================
+   DATE HELPERS
+========================================= */
+
+function parseDateString(
+  dateString
+) {
+  if (!dateString) {
+    return new Date();
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = dateString
+    .split("-")
+    .map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  );
+}
+
+function formatThaiDate(
+  dateString
+) {
+  if (!dateString) {
+    return "-";
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = dateString
+    .split("-")
+    .map(Number);
+
+  return new Intl.DateTimeFormat(
+    "th-TH",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }
+  ).format(
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    )
+  );
+}
+
+function shortMonth(
+  monthIndex
+) {
+  const months = [
+    "ม.ค.",
+    "ก.พ.",
+    "มี.ค.",
+    "เม.ย.",
+    "พ.ค.",
+    "มิ.ย.",
+    "ก.ค.",
+    "ส.ค.",
+    "ก.ย.",
+    "ต.ค.",
+    "พ.ย.",
+    "ธ.ค.",
+  ];
+
+  return months[monthIndex];
+}
+
+function calculateDaysLeft(
+  runoutDate
+) {
+  if (!runoutDate) {
+    return 0;
+  }
+
+  const today =
+    new Date();
+
+  today.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const target =
+    parseDateString(
+      runoutDate
+    );
+
+  target.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const difference =
+    target.getTime() -
+    today.getTime();
+
+  return Math.ceil(
+    difference /
+      (1000 *
+        60 *
+        60 *
+        24)
   );
 }
 
