@@ -710,15 +710,30 @@ function ActiveCalendar({
 
       <div
         style={{
-          marginTop: 14,
-          marginBottom: 7,
+          marginTop: 16,
+          marginBottom: 8,
           padding: "0 2px",
-          fontSize: 13,
-          fontWeight: 600,
-          color: "#33414d",
         }}
       >
-        ยาประจำของฉัน ({medications.length})
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: "#263746",
+          }}
+        >
+          ยาประจำของฉัน ({medications.length})
+        </div>
+
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 10,
+            color: "#8b98a4",
+          }}
+        >
+          ตรวจสอบสถานะและวันนัดรับยาของแต่ละรายการ
+        </div>
       </div>
 
       {allOrders.map(
@@ -740,67 +755,206 @@ function ActiveCalendar({
               key={medication.id}
               className="medicine-card"
               style={{
-                borderLeft:
-                  `3px solid ${color}`,
+                position: "relative",
+                overflow: "hidden",
+                borderLeft: `3px solid ${color}`,
+                padding: 14,
               }}
             >
-              <div className="medicine-header">
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 11,
+                }}
+              >
                 <div
                   style={{
-                    width: 10,
-                    height: 10,
+                    width: 40,
+                    height: 40,
                     flexShrink: 0,
-                    borderRadius: "50%",
-                    background: color,
+                    borderRadius: 13,
+                    display: "grid",
+                    placeItems: "center",
+                    background: `${color}14`,
+                    color,
+                    fontSize: 18,
+                    fontWeight: 700,
                   }}
-                />
-
-                <div>
-                  <small>
-                    ยาประจำของฉัน
-                  </small>
-
-                  <h3>
-                    {medication.drug_name}
-                    {medication.strength
-                      ? ` ${medication.strength}`
-                      : ""}
-                  </h3>
+                >
+                  ◉
                 </div>
 
-                <span
+                <div
                   style={{
-                    padding: "5px 8px",
-                    borderRadius: 20,
-                    background:
-                      statusMeta.background,
-                    color:
-                      statusMeta.color,
-                    fontSize: 9,
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
+                    flex: 1,
+                    minWidth: 0,
                   }}
                 >
-                  {statusMeta.text}
-                </span>
-              </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        minWidth: 0,
+                      }}
+                    >
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontSize: 15,
+                          lineHeight: 1.35,
+                          color: "#172334",
+                        }}
+                      >
+                        {medication.drug_name}
+                        {medication.strength
+                          ? ` ${medication.strength}`
+                          : ""}
+                      </h3>
 
-              <div className="medicine-bottom">
-                <span>
-                  จำนวน{" "}
-                  {medication.quantity || "-"}
-                </span>
+                      <div
+                        style={{
+                          marginTop: 5,
+                          fontSize: 10,
+                          color: "#8b98a4",
+                        }}
+                      >
+                        {medication.dosage_instruction ||
+                          "ไม่มีข้อมูลวิธีใช้"}
+                      </div>
+                    </div>
 
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: "#8c969f",
-                  }}
-                >
-                  {daysLeft >= 0
-                    ? `เหลือ ${daysLeft} วัน`
-                    : "ถึงรอบรับยา"}
-                </span>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "6px 9px",
+                        borderRadius: 999,
+                        background:
+                          statusMeta.background,
+                        color:
+                          statusMeta.color,
+                        fontSize: 9,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {statusMeta.text}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1fr 1fr",
+                      gap: 8,
+                      marginTop: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "8px 9px",
+                        borderRadius: 10,
+                        background: "#f7fafb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: "#97a3ad",
+                        }}
+                      >
+                        วันยืนยัน
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: "#52606c",
+                        }}
+                      >
+                        {formatThaiDate(
+                          order.confirm_reminder_date
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: "8px 9px",
+                        borderRadius: 10,
+                        background: "#f7fafb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: "#97a3ad",
+                        }}
+                      >
+                        นัดรับยา
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: "#52606c",
+                        }}
+                      >
+                        {formatThaiDate(
+                          order.pickup_date
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: 10,
+                      paddingTop: 9,
+                      borderTop:
+                        "1px solid #edf1f3",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#7f8b95",
+                      }}
+                    >
+                      จำนวน{" "}
+                      {medication.quantity || "-"}
+                    </span>
+
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color:
+                          daysLeft <= 7
+                            ? "#c46f3a"
+                            : "#7f8b95",
+                      }}
+                    >
+                      {daysLeft >= 0
+                        ? `เหลือ ${daysLeft} วัน`
+                        : "ถึงรอบรับยา"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </section>
           );
@@ -981,8 +1135,8 @@ function Day({
                 style={
                   event.type === "order"
                     ? {
-                        width: 5,
-                        height: 5,
+                        width: 7,
+                        height: 7,
                         borderRadius:
                           "50%",
                         background:
@@ -990,8 +1144,8 @@ function Day({
                         flexShrink: 0,
                       }
                     : {
-                        width: 6,
-                        height: 6,
+                        width: 7,
+                        height: 7,
                         borderRadius:
                           "50%",
                         border:
