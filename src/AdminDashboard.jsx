@@ -4,6 +4,7 @@ import {
   getPendingLineUsers,
   getAllCustomers,
   linkCustomer,
+  addMedication,
 } from "./adminApi";
 
 function AdminDashboard() {
@@ -186,7 +187,10 @@ function AdminDashboard() {
           )}
 
           {activeTab === "customers" && (
-            <CustomerList customers={customers} />
+            <CustomerList
+              customers={customers}
+              onRefresh={loadCustomers}
+            />
           )}
         </>
       )}
@@ -205,7 +209,15 @@ function AdminDashboard() {
   );
 }
 
-function CustomerList({ customers }) {
+function CustomerList({
+  customers,
+  onRefresh,
+}) {
+  const [
+    selectedCustomer,
+    setSelectedCustomer,
+  ] = useState(null);
+
   if (customers.length === 0) {
     return (
       <div style={styles.empty}>
@@ -218,96 +230,185 @@ function CustomerList({ customers }) {
   }
 
   return (
-    <div style={styles.list}>
-      {customers.map((customer) => {
-        const line = customer.line_users?.[0] || null;
-        const medications = customer.medications || [];
+    <>
+      <div style={styles.list}>
+        {customers.map((customer) => {
+          const line =
+            customer.line_users?.[0] || null;
 
-        return (
-          <div key={customer.id} style={styles.customerDetailCard}>
-            <div style={styles.customerTop}>
-              {line?.picture_url ? (
-                <img
-                  src={line.picture_url}
-                  alt=""
-                  style={styles.avatar}
-                />
-              ) : (
-                <div style={styles.avatarPlaceholder}>L</div>
-              )}
+          const medications =
+            customer.medications || [];
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <strong>{customer.full_name || "-"}</strong>
-                <div style={styles.muted}>
-                  LINE: {line?.display_name || "-"}
-                </div>
-                <div style={styles.muted}>
-                  {customer.phone || "-"}
-                </div>
-              </div>
-
-              <OrderStatus
-                status={getLatestOrder(medications)?.status}
-              />
-            </div>
-
-            {medications.length === 0 ? (
-              <div style={styles.noMedication}>
-                ยังไม่มีข้อมูลยา
-              </div>
-            ) : (
-              medications.map((medication) => {
-                const order = medication.latest_order || null;
-
-                return (
-                  <div
-                    key={medication.id}
-                    style={styles.medicationSection}
-                  >
-                    <div style={styles.medicationBox}>
-                      <strong>
-                        {medication.drug_name}
-                        {medication.strength
-                          ? ` ${medication.strength}`
-                          : ""}
-                      </strong>
-
-                      <span>
-                        {medication.dosage_instruction || "-"}
-                      </span>
-                    </div>
-
-                    {order && (
-                      <div style={styles.orderInfo}>
-                        <div style={styles.orderInfoItem}>
-                          <span style={styles.orderLabel}>
-                            วันเตือนยืนยัน
-                          </span>
-                          <strong>
-                            {formatThaiDate(
-                              order.confirm_reminder_date
-                            )}
-                          </strong>
-                        </div>
-
-                        <div style={styles.orderInfoItem}>
-                          <span style={styles.orderLabel}>
-                            วันรับยา
-                          </span>
-                          <strong>
-                            {formatThaiDate(order.pickup_date)}
-                          </strong>
-                        </div>
-                      </div>
-                    )}
+          return (
+            <div
+              key={customer.id}
+              style={styles.customerDetailCard}
+            >
+              <div style={styles.customerTop}>
+                {line?.picture_url ? (
+                  <img
+                    src={line.picture_url}
+                    alt=""
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <div style={styles.avatarPlaceholder}>
+                    L
                   </div>
-                );
-              })
-            )}
-          </div>
-        );
-      })}
-    </div>
+                )}
+
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <strong>
+                    {customer.full_name || "-"}
+                  </strong>
+
+                  <div style={styles.muted}>
+                    LINE:{" "}
+                    {line?.display_name || "-"}
+                  </div>
+
+                  <div style={styles.muted}>
+                    {customer.phone || "-"}
+                  </div>
+                </div>
+
+                <OrderStatus
+                  status={
+                    getLatestOrder(
+                      medications
+                    )?.status
+                  }
+                />
+              </div>
+
+              <div style={styles.customerActions}>
+                <button
+                  type="button"
+                  style={styles.addMedicationButton}
+                  onClick={() =>
+                    setSelectedCustomer(customer)
+                  }
+                >
+                  ＋ เพิ่มยา
+                </button>
+              </div>
+
+              {medications.length === 0 ? (
+                <div style={styles.noMedication}>
+                  ยังไม่มีข้อมูลยา
+                </div>
+              ) : (
+                medications.map(
+                  (medication) => {
+                    const order =
+                      medication.latest_order ||
+                      null;
+
+                    return (
+                      <div
+                        key={medication.id}
+                        style={
+                          styles.medicationSection
+                        }
+                      >
+                        <div
+                          style={
+                            styles.medicationBox
+                          }
+                        >
+                          <strong>
+                            {
+                              medication.drug_name
+                            }
+                            {medication.strength
+                              ? ` ${medication.strength}`
+                              : ""}
+                          </strong>
+
+                          <span>
+                            {medication.dosage_instruction ||
+                              "-"}
+                          </span>
+                        </div>
+
+                        {order && (
+                          <div
+                            style={
+                              styles.orderInfo
+                            }
+                          >
+                            <div
+                              style={
+                                styles.orderInfoItem
+                              }
+                            >
+                              <span
+                                style={
+                                  styles.orderLabel
+                                }
+                              >
+                                วันเตือนยืนยัน
+                              </span>
+
+                              <strong>
+                                {formatThaiDate(
+                                  order.confirm_reminder_date
+                                )}
+                              </strong>
+                            </div>
+
+                            <div
+                              style={
+                                styles.orderInfoItem
+                              }
+                            >
+                              <span
+                                style={
+                                  styles.orderLabel
+                                }
+                              >
+                                วันรับยา
+                              </span>
+
+                              <strong>
+                                {formatThaiDate(
+                                  order.pickup_date
+                                )}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                )
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedCustomer && (
+        <AddMedicationForm
+          customer={selectedCustomer}
+          onClose={() =>
+            setSelectedCustomer(null)
+          }
+          onSaved={async () => {
+            setSelectedCustomer(null);
+
+            if (onRefresh) {
+              await onRefresh();
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -387,15 +488,12 @@ function formatThaiDate(dateString) {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-function CustomerLinkForm({
-  user,
+function AddMedicationForm({
+  customer,
   onClose,
   onSaved,
 }) {
   const [form, setForm] = useState({
-    full_name: "",
-    phone: "",
-    branch_name: "",
     drug_name: "",
     strength: "",
     quantity: 30,
@@ -412,14 +510,412 @@ function CustomerLinkForm({
     useState("");
 
   function updateField(e) {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
+    setForm((current) => ({
+      ...current,
+      [e.target.name]:
+        e.target.value,
+    }));
   }
 
   function calculateDates() {
-    if (!form.start_date || !form.days_supply) {
+    if (
+      !form.start_date ||
+      !form.days_supply
+    ) {
+      return {
+        expectedRunout: "-",
+        confirmDate: "-",
+      };
+    }
+
+    function addDays(
+      dateString,
+      days
+    ) {
+      const [
+        year,
+        month,
+        day,
+      ] = dateString
+        .split("-")
+        .map(Number);
+
+      const date = new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day
+        )
+      );
+
+      date.setUTCDate(
+        date.getUTCDate() +
+          Number(days)
+      );
+
+      return date
+        .toISOString()
+        .slice(0, 10);
+    }
+
+    function displayDate(
+      dateString
+    ) {
+      const [
+        year,
+        month,
+        day,
+      ] = dateString
+        .split("-")
+        .map(Number);
+
+      return new Intl.DateTimeFormat(
+        "th-TH",
+        {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        }
+      ).format(
+        new Date(
+          Date.UTC(
+            year,
+            month - 1,
+            day
+          )
+        )
+      );
+    }
+
+    const expectedRunout =
+      addDays(
+        form.start_date,
+        form.days_supply
+      );
+
+    const confirmDate =
+      addDays(
+        expectedRunout,
+        -14
+      );
+
+    return {
+      expectedRunout:
+        displayDate(
+          expectedRunout
+        ),
+      confirmDate:
+        displayDate(confirmDate),
+    };
+  }
+
+  const calculated =
+    calculateDates();
+
+  async function submit(e) {
+    e.preventDefault();
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await addMedication({
+        customer_id:
+          customer.id,
+        drug_name:
+          form.drug_name,
+        strength:
+          form.strength,
+        quantity:
+          form.quantity === ""
+            ? null
+            : Number(
+                form.quantity
+              ),
+        dosage_instruction:
+          form.dosage_instruction,
+        start_date:
+          form.start_date,
+        days_supply:
+          Number(
+            form.days_supply
+          ),
+        pickup_date:
+          form.pickup_date,
+      });
+
+      alert(
+        "เพิ่มยาเรียบร้อย"
+      );
+
+      await onSaved();
+    } catch (err) {
+      console.error(
+        "ADD MEDICATION ERROR:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "ไม่สามารถเพิ่มยาได้"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={formStyles.overlay}>
+      <div style={formStyles.modal}>
+        <div style={formStyles.modalHeader}>
+          <div>
+            <small style={styles.muted}>
+              เพิ่มยาให้ลูกค้า
+            </small>
+
+            <h2
+              style={{
+                margin: "3px 0",
+              }}
+            >
+              {customer.full_name}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={formStyles.close}
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          <SectionTitle>
+            ข้อมูลยา
+          </SectionTitle>
+
+          <Field
+            label="ชื่อยา"
+            name="drug_name"
+            value={form.drug_name}
+            onChange={updateField}
+            placeholder="เช่น Losartan"
+            required
+          />
+
+          <Field
+            label="ความแรง"
+            name="strength"
+            value={form.strength}
+            onChange={updateField}
+            placeholder="เช่น 50 mg"
+          />
+
+          <Field
+            label="จำนวน"
+            name="quantity"
+            type="number"
+            min="1"
+            value={form.quantity}
+            onChange={updateField}
+            required
+          />
+
+          <Field
+            label="วิธีใช้"
+            name="dosage_instruction"
+            value={
+              form.dosage_instruction
+            }
+            onChange={updateField}
+            placeholder="เช่น 1 เม็ด หลังอาหารเช้า"
+          />
+
+          <SectionTitle>
+            รอบการใช้ยา
+          </SectionTitle>
+
+          <Field
+            label="วันที่เริ่มใช้ยา"
+            name="start_date"
+            type="date"
+            value={form.start_date}
+            onChange={updateField}
+            required
+          />
+
+          <Field
+            label="จำนวนวันที่ใช้ได้"
+            name="days_supply"
+            type="number"
+            min="1"
+            value={form.days_supply}
+            onChange={updateField}
+            required
+          />
+
+          <Field
+            label="วันนัดรับยาครั้งถัดไป"
+            name="pickup_date"
+            type="date"
+            value={form.pickup_date}
+            onChange={updateField}
+            required
+          />
+
+          <div
+            style={
+              formStyles.calculationBox
+            }
+          >
+            <div>
+              <span>
+                ยาคาดว่าจะหมด
+              </span>
+
+              <strong>
+                {
+                  calculated.expectedRunout
+                }
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                แจ้งเตือนยืนยันสั่งยา
+              </span>
+
+              <strong>
+                {
+                  calculated.confirmDate
+                }
+              </strong>
+            </div>
+
+            <small>
+              ยารายการนี้จะมี
+              Notification และ
+              Confirm แยกจากยาอื่น
+            </small>
+          </div>
+
+          {error && (
+            <div style={styles.error}>
+              {error}
+            </div>
+          )}
+
+          <div style={formStyles.actions}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={formStyles.cancel}
+            >
+              ยกเลิก
+            </button>
+
+            <button
+              type="submit"
+              disabled={saving}
+              style={formStyles.save}
+            >
+              {saving
+                ? "กำลังบันทึก..."
+                : "เพิ่มยา"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CustomerLinkForm({
+  user,
+  onClose,
+  onSaved,
+}) {
+  const emptyMedication = () => ({
+    drug_name: "",
+    strength: "",
+    quantity: 30,
+    dosage_instruction: "",
+    start_date: "",
+    days_supply: 30,
+    pickup_date: "",
+  });
+
+  const [form, setForm] = useState({
+    full_name: "",
+    phone: "",
+    branch_name: "",
+    medications: [emptyMedication()],
+  });
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  function updateCustomerField(e) {
+    setForm((current) => ({
+      ...current,
+      [e.target.name]: e.target.value,
+    }));
+  }
+
+  function updateMedicationField(index, e) {
+    const { name, value } = e.target;
+
+    setForm((current) => ({
+      ...current,
+      medications: current.medications.map(
+        (medication, medicationIndex) =>
+          medicationIndex === index
+            ? {
+                ...medication,
+                [name]: value,
+              }
+            : medication
+      ),
+    }));
+  }
+
+  function addMedication() {
+    setForm((current) => ({
+      ...current,
+      medications: [
+        ...current.medications,
+        emptyMedication(),
+      ],
+    }));
+  }
+
+  function removeMedication(index) {
+    setForm((current) => {
+      if (current.medications.length === 1) {
+        return current;
+      }
+
+      return {
+        ...current,
+        medications: current.medications.filter(
+          (_, medicationIndex) =>
+            medicationIndex !== index
+        ),
+      };
+    });
+  }
+
+  function calculateDates(medication) {
+    if (
+      !medication.start_date ||
+      !medication.days_supply
+    ) {
       return {
         expectedRunout: "-",
         confirmDate: "-",
@@ -442,7 +938,7 @@ function CustomerLinkForm({
       return date.toISOString().slice(0, 10);
     }
 
-    function formatThaiDate(dateString) {
+    function formatDate(dateString) {
       const [year, month, day] = dateString
         .split("-")
         .map(Number);
@@ -458,8 +954,8 @@ function CustomerLinkForm({
     }
 
     const expectedRunoutDate = addDays(
-      form.start_date,
-      form.days_supply
+      medication.start_date,
+      medication.days_supply
     );
 
     const confirmReminderDate = addDays(
@@ -468,55 +964,64 @@ function CustomerLinkForm({
     );
 
     return {
-      expectedRunout: formatThaiDate(
+      expectedRunout: formatDate(
         expectedRunoutDate
       ),
-      confirmDate: formatThaiDate(
+      confirmDate: formatDate(
         confirmReminderDate
       ),
     };
   }
 
-  const calculated =
-    calculateDates();
-
   async function submit(e) {
-  e.preventDefault();
+    e.preventDefault();
 
-  try {
-    setSaving(true);
-    setError("");
+    try {
+      setSaving(true);
+      setError("");
 
-    const result = await linkCustomer({
-      line_user_row_id: user.id,
-      full_name: form.full_name,
-      phone: form.phone,
-      branch_name: form.branch_name,
-      drug_name: form.drug_name,
-      strength: form.strength,
-      quantity: form.quantity,
-      dosage_instruction: form.dosage_instruction,
-      start_date: form.start_date,
-      days_supply: form.days_supply,
-      pickup_date: form.pickup_date,
-    });
+      const result = await linkCustomer({
+        line_user_row_id: user.id,
+        full_name: form.full_name,
+        phone: form.phone,
+        branch_name: form.branch_name,
+        medications: form.medications.map(
+          (medication) => ({
+            ...medication,
+            quantity:
+              medication.quantity === ""
+                ? null
+                : Number(medication.quantity),
+            days_supply:
+              Number(medication.days_supply),
+          })
+        ),
+      });
 
-    console.log("LINK CUSTOMER RESULT:", result);
+      console.log(
+        "LINK CUSTOMER RESULT:",
+        result
+      );
 
-    alert("บันทึกข้อมูลลูกค้าเรียบร้อย");
+      alert(
+        `บันทึกลูกค้าและยา ${form.medications.length} รายการเรียบร้อย`
+      );
 
-    onSaved();
-  } catch (err) {
-    console.error("LINK CUSTOMER ERROR:", err);
+      onSaved();
+    } catch (err) {
+      console.error(
+        "LINK CUSTOMER ERROR:",
+        err
+      );
 
-    setError(
-      err?.message ||
-        "ไม่สามารถบันทึกข้อมูลได้"
-    );
-  } finally {
-    setSaving(false);
+      setError(
+        err?.message ||
+          "ไม่สามารถบันทึกข้อมูลได้"
+      );
+    } finally {
+      setSaving(false);
+    }
   }
-}
 
   return (
     <div style={formStyles.overlay}>
@@ -574,7 +1079,7 @@ function CustomerLinkForm({
             label="ชื่อ-นามสกุล"
             name="full_name"
             value={form.full_name}
-            onChange={updateField}
+            onChange={updateCustomerField}
             placeholder="เช่น สมหญิง ใจดี"
             required
           />
@@ -583,7 +1088,7 @@ function CustomerLinkForm({
             label="เบอร์โทรศัพท์"
             name="phone"
             value={form.phone}
-            onChange={updateField}
+            onChange={updateCustomerField}
             placeholder="เช่น 0812345678"
             required
           />
@@ -592,109 +1097,159 @@ function CustomerLinkForm({
             label="สาขารับยา"
             name="branch_name"
             value={form.branch_name}
-            onChange={updateField}
+            onChange={updateCustomerField}
             placeholder="เช่น eXta Plus ระเบาะไผ่"
           />
 
           <SectionTitle>
-            ข้อมูลยา
+            รายการยา
           </SectionTitle>
 
-          <Field
-            label="ชื่อยา"
-            name="drug_name"
-            value={form.drug_name}
-            onChange={updateField}
-            placeholder="เช่น Metformin"
-            required
-          />
+          {form.medications.map(
+            (medication, index) => {
+              const calculated =
+                calculateDates(medication);
 
-          <Field
-            label="ความแรง"
-            name="strength"
-            value={form.strength}
-            onChange={updateField}
-            placeholder="เช่น 500 mg"
-          />
+              return (
+                <div
+                  key={index}
+                  style={formStyles.medicationEditor}
+                >
+                  <div style={formStyles.medicationEditorHeader}>
+                    <strong>
+                      ยารายการที่ {index + 1}
+                    </strong>
 
-          <Field
-            label="จำนวน"
-            name="quantity"
-            type="number"
-            value={form.quantity}
-            onChange={updateField}
-            required
-          />
+                    {form.medications.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removeMedication(index)
+                        }
+                        style={formStyles.removeMedication}
+                      >
+                        ลบรายการ
+                      </button>
+                    )}
+                  </div>
 
-          <Field
-            label="วิธีใช้"
-            name="dosage_instruction"
-            value={
-              form.dosage_instruction
+                  <Field
+                    label="ชื่อยา"
+                    name="drug_name"
+                    value={medication.drug_name}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    placeholder="เช่น Metformin"
+                    required
+                  />
+
+                  <Field
+                    label="ความแรง"
+                    name="strength"
+                    value={medication.strength}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    placeholder="เช่น 500 mg"
+                  />
+
+                  <Field
+                    label="จำนวน"
+                    name="quantity"
+                    type="number"
+                    min="1"
+                    value={medication.quantity}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    required
+                  />
+
+                  <Field
+                    label="วิธีใช้"
+                    name="dosage_instruction"
+                    value={
+                      medication.dosage_instruction
+                    }
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    placeholder="เช่น 1 เม็ด หลังอาหารเช้า"
+                  />
+
+                  <Field
+                    label="วันที่เริ่มใช้ยา"
+                    name="start_date"
+                    type="date"
+                    value={medication.start_date}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    required
+                  />
+
+                  <Field
+                    label="จำนวนวันที่ใช้ได้"
+                    name="days_supply"
+                    type="number"
+                    min="1"
+                    value={medication.days_supply}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    required
+                  />
+
+                  <Field
+                    label="วันนัดรับยาครั้งถัดไป"
+                    name="pickup_date"
+                    type="date"
+                    value={medication.pickup_date}
+                    onChange={(e) =>
+                      updateMedicationField(index, e)
+                    }
+                    required
+                  />
+
+                  <div style={formStyles.calculationBox}>
+                    <div>
+                      <span>
+                        ยาคาดว่าจะหมด
+                      </span>
+
+                      <strong>
+                        {calculated.expectedRunout}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>
+                        แจ้งเตือนยืนยันสั่งยา
+                      </span>
+
+                      <strong>
+                        {calculated.confirmDate}
+                      </strong>
+                    </div>
+
+                    <small>
+                      แต่ละรายการแจ้งเตือนก่อนยาหมด
+                      14 วัน และลูกค้ายืนยันแยกยา
+                    </small>
+                  </div>
+                </div>
+              );
             }
-            onChange={updateField}
-            placeholder="เช่น 1 เม็ด หลังอาหารเช้า"
-          />
+          )}
 
-          <SectionTitle>
-            รอบการใช้ยา
-          </SectionTitle>
-
-          <Field
-            label="วันที่เริ่มใช้ยา"
-            name="start_date"
-            type="date"
-            value={form.start_date}
-            onChange={updateField}
-            required
-          />
-
-          <Field
-            label="จำนวนวันที่ใช้ได้"
-            name="days_supply"
-            type="number"
-            value={form.days_supply}
-            onChange={updateField}
-            required
-          />
-
-          <Field
-            label="วันนัดรับยาครั้งถัดไป"
-            name="pickup_date"
-            type="date"
-            value={form.pickup_date}
-            onChange={updateField}
-            required
-          />
-
-          <div style={formStyles.calculationBox}>
-            <div>
-              <span>
-                ยาคาดว่าจะหมด
-              </span>
-
-              <strong>
-                {
-                  calculated.expectedRunout
-                }
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                แจ้งเตือนยืนยันสั่งยา
-              </span>
-
-              <strong>
-                {calculated.confirmDate}
-              </strong>
-            </div>
-
-            <small>
-              ระบบแจ้งเตือนก่อนยาหมด
-              14 วัน
-            </small>
-          </div>
+          <button
+            type="button"
+            onClick={addMedication}
+            style={formStyles.addMedication}
+          >
+            ＋ เพิ่มยาอีกหนึ่งรายการ
+          </button>
 
           {error && (
             <div style={styles.error}>
@@ -718,7 +1273,7 @@ function CustomerLinkForm({
             >
               {saving
                 ? "กำลังบันทึก..."
-                : "บันทึกข้อมูล"}
+                : `บันทึก ${form.medications.length} รายการยา`}
             </button>
           </div>
         </form>
@@ -941,6 +1496,23 @@ const styles = {
     fontSize: 12,
   },
 
+  customerActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+
+  addMedicationButton: {
+    border: 0,
+    borderRadius: 10,
+    padding: "8px 11px",
+    background: "#eaf6fa",
+    color: "#258fbb",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontSize: 11,
+  },
+
   noMedication: {
     marginTop: 12,
     padding: 12,
@@ -1049,6 +1621,46 @@ const formStyles = {
     fontFamily: "inherit",
     fontSize: 13,
     outline: "none",
+  },
+
+  medicationEditor: {
+    marginBottom: 16,
+    padding: 14,
+    border: "1px solid #e4eaed",
+    borderRadius: 14,
+    background: "#fbfcfd",
+  },
+
+  medicationEditorHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
+    color: "#253442",
+    fontSize: 13,
+  },
+
+  removeMedication: {
+    border: 0,
+    background: "#fff0f0",
+    color: "#bd4747",
+    borderRadius: 9,
+    padding: "7px 9px",
+    cursor: "pointer",
+    fontSize: 11,
+  },
+
+  addMedication: {
+    width: "100%",
+    marginTop: 4,
+    padding: 12,
+    border: "1px dashed #8fc4d8",
+    borderRadius: 12,
+    background: "#f4fafc",
+    color: "#258fbb",
+    fontWeight: 600,
+    cursor: "pointer",
   },
 
   calculationBox: {

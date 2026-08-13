@@ -96,27 +96,38 @@ Deno.serve(async (req) => {
         full_name,
         phone,
         branch_name,
-        drug_name,
-        strength,
-        quantity,
-        dosage_instruction,
-        start_date,
-        days_supply,
-        pickup_date,
+        medications,
       } = body;
 
-      // ตรวจข้อมูลที่จำเป็น
       if (
         !line_user_row_id ||
         !full_name ||
-        !drug_name ||
-        !start_date ||
-        !days_supply ||
-        !pickup_date
+        !Array.isArray(medications) ||
+        medications.length === 0
       ) {
         return json(
           {
-            error: "ข้อมูลไม่ครบ",
+            error:
+              "ข้อมูลลูกค้าหรือรายการยาไม่ครบ",
+          },
+          400
+        );
+      }
+
+      const invalidMedication =
+        medications.find(
+          (medication) =>
+            !medication?.drug_name ||
+            !medication?.start_date ||
+            !medication?.days_supply ||
+            !medication?.pickup_date
+        );
+
+      if (invalidMedication) {
+        return json(
+          {
+            error:
+              "กรุณากรอกชื่อยา วันที่เริ่มใช้ จำนวนวันที่ใช้ได้ และวันนัดรับยาให้ครบทุกรายการ",
           },
           400
         );
@@ -160,10 +171,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      // ====================================
       // 1. สร้าง CUSTOMER
-      // ====================================
-
       const {
         data: customer,
         error: customerError,
@@ -184,87 +192,87 @@ Deno.serve(async (req) => {
         throw customerError;
       }
 
-      // ====================================
-      // 2. สร้าง MEDICATION
-      // ====================================
+      // 2. สร้าง MEDICATION + ORDER แยกทีละรายการ
+      const createdMedications = [];
+      const createdOrders = [];
 
-      const {
-        data: medication,
-        error: medicationError,
-      } = await supabase
-        .from("medications")
-        .insert({
-          customer_id: customer.id,
-          drug_name,
-          strength: strength || null,
-          quantity:
-            quantity !== ""
-              ? Number(quantity)
-              : null,
-          dosage_instruction:
-            dosage_instruction || null,
-          start_date,
-          days_supply:
-            Number(days_supply),
-        })
-        .select()
-        .single();
+      for (const item of medications) {
+        const {
+          data: medication,
+          error: medicationError,
+        } = await supabase
+          .from("medications")
+          .insert({
+            customer_id: customer.id,
+            drug_name: item.drug_name,
+            strength:
+              item.strength || null,
+            quantity:
+              item.quantity !== "" &&
+              item.quantity !== null &&
+              item.quantity !== undefined
+                ? Number(item.quantity)
+                : null,
+            dosage_instruction:
+              item.dosage_instruction ||
+              null,
+            start_date:
+              item.start_date,
+            days_supply:
+              Number(item.days_supply),
+          })
+          .select()
+          .single();
 
-      if (medicationError) {
-        throw medicationError;
-      }
+        if (medicationError) {
+          throw medicationError;
+        }
 
-      // ====================================
-      // 3. คำนวณวันที่แบบไม่ให้ timezone เพี้ยน
-      // ====================================
+        const expectedRunoutDate =
+          addDaysToDateString(
+            item.start_date,
+            Number(item.days_supply)
+          );
 
-      const expectedRunoutDate =
-        addDaysToDateString(
-          start_date,
-          Number(days_supply)
-        );
-
-      const confirmReminderDate =
-        addDaysToDateString(
-          expectedRunoutDate,
-          -14
-        );
-
-      // ====================================
-      // 4. สร้าง MEDICATION ORDER
-      // ====================================
-
-      const {
-        data: order,
-        error: orderError,
-      } = await supabase
-        .from("medication_orders")
-        .insert({
-          customer_id: customer.id,
-          medication_id: medication.id,
-
-          status:
-            "waiting_confirmation",
-
-          expected_runout_date:
+        const confirmReminderDate =
+          addDaysToDateString(
             expectedRunoutDate,
+            -14
+          );
 
-          confirm_reminder_date:
-            confirmReminderDate,
+        const {
+          data: order,
+          error: orderError,
+        } = await supabase
+          .from("medication_orders")
+          .insert({
+            customer_id: customer.id,
+            medication_id:
+              medication.id,
+            status:
+              "waiting_confirmation",
+            expected_runout_date:
+              expectedRunoutDate,
+            confirm_reminder_date:
+              confirmReminderDate,
+            pickup_date:
+              item.pickup_date,
+          })
+          .select()
+          .single();
 
-          pickup_date,
-        })
-        .select()
-        .single();
+        if (orderError) {
+          throw orderError;
+        }
 
-      if (orderError) {
-        throw orderError;
+        createdMedications.push(
+          medication
+        );
+
+        createdOrders.push(order);
       }
 
-      // ====================================
-      // 5. ผูก LINE USER กับ CUSTOMER
-      // ====================================
-
+      // 3. ผูก LINE USER กับ CUSTOMER
       const {
         data: updatedLineUser,
         error: lineError,
@@ -284,28 +292,147 @@ Deno.serve(async (req) => {
         throw lineError;
       }
 
-      // ====================================
-      // SUCCESS
-      // ====================================
+      return json({
+        success: true,
+        customer,
+        medications:
+          createdMedications,
+        orders: createdOrders,
+        line_user:
+          updatedLineUser,
+      });
+    }
+
+    // ====================================
+    // ACTION 3 : ADD MEDICATION
+    // ====================================
+
+    if (body.action === "add_medication") {
+      const {
+        customer_id,
+        drug_name,
+        strength,
+        quantity,
+        dosage_instruction,
+        start_date,
+        days_supply,
+        pickup_date,
+      } = body;
+
+      if (
+        !customer_id ||
+        !drug_name ||
+        !start_date ||
+        !days_supply ||
+        !pickup_date
+      ) {
+        return json(
+          {
+            error:
+              "ข้อมูลยาไม่ครบ",
+          },
+          400
+        );
+      }
+
+      const {
+        data: customer,
+        error: customerError,
+      } = await supabase
+        .from("customers")
+        .select(
+          "id, full_name, branch_name"
+        )
+        .eq("id", customer_id)
+        .maybeSingle();
+
+      if (customerError) {
+        throw customerError;
+      }
+
+      if (!customer) {
+        return json(
+          {
+            error:
+              "ไม่พบลูกค้าคนนี้",
+          },
+          404
+        );
+      }
+
+      const {
+        data: medication,
+        error: medicationError,
+      } = await supabase
+        .from("medications")
+        .insert({
+          customer_id:
+            customer.id,
+          drug_name,
+          strength:
+            strength || null,
+          quantity:
+            quantity !== "" &&
+            quantity !== null &&
+            quantity !== undefined
+              ? Number(quantity)
+              : null,
+          dosage_instruction:
+            dosage_instruction ||
+            null,
+          start_date,
+          days_supply:
+            Number(days_supply),
+        })
+        .select()
+        .single();
+
+      if (medicationError) {
+        throw medicationError;
+      }
+
+      const expectedRunoutDate =
+        addDaysToDateString(
+          start_date,
+          Number(days_supply)
+        );
+
+      const confirmReminderDate =
+        addDaysToDateString(
+          expectedRunoutDate,
+          -14
+        );
+
+      const {
+        data: order,
+        error: orderError,
+      } = await supabase
+        .from("medication_orders")
+        .insert({
+          customer_id:
+            customer.id,
+          medication_id:
+            medication.id,
+          status:
+            "waiting_confirmation",
+          expected_runout_date:
+            expectedRunoutDate,
+          confirm_reminder_date:
+            confirmReminderDate,
+          pickup_date,
+        })
+        .select()
+        .single();
+
+      if (orderError) {
+        throw orderError;
+      }
 
       return json({
         success: true,
-
         customer,
         medication,
         order,
-
-        line_user: updatedLineUser,
-
-        calculated_dates: {
-          expected_runout_date:
-            expectedRunoutDate,
-
-          confirm_reminder_date:
-            confirmReminderDate,
-
-          pickup_date,
-        },
       });
     }
 

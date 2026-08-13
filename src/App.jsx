@@ -193,6 +193,30 @@ function CustomerApp() {
       setCustomer(null);
     }
   }
+  async function goToCalendar() {
+    try {
+      await refreshCalendar();
+
+      // Remove action/order from the LIFF URL so the app renders the calendar.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("action");
+      url.searchParams.delete("order");
+
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}${url.search}${url.hash}`
+      );
+
+      // URLSearchParams above is not React state, so force a lightweight
+      // navigation to re-render CustomerApp in calendar mode.
+      window.location.reload();
+    } catch (err) {
+      console.error("RETURN TO CALENDAR ERROR:", err);
+      window.location.href = window.location.pathname;
+    }
+  }
+
   /* LOADING */
 
   if (loading) {
@@ -250,6 +274,7 @@ function CustomerApp() {
             orderId={orderId}
             idToken={lineIdToken}
             onRefresh={refreshCalendar}
+            onBackToCalendar={goToCalendar}
           />
         ) : (
           <ActiveCalendar
@@ -273,6 +298,7 @@ function ActiveCalendar({
   customer,
   idToken,
   onRefresh,
+  onBackToCalendar,
 }) {
   const medication =
     customer?.medications?.[0] || null;
@@ -853,6 +879,24 @@ function ConfirmOrderPage({
             selectedOrder.pickup_date
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={onBackToCalendar}
+          style={{
+            width: "100%",
+            marginTop: 18,
+            padding: 13,
+            border: 0,
+            borderRadius: 12,
+            background: "#258fbb",
+            color: "white",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          กลับไปปฏิทินยา
+        </button>
       </section>
     );
   }
