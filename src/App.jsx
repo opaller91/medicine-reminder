@@ -298,32 +298,13 @@ function ActiveCalendar({
   customer,
   idToken,
   onRefresh,
-  onBackToCalendar,
 }) {
-  const medication =
-    customer?.medications?.[0] || null;
-
-  const order =
-    medication?.latest_order || null;
-
-  const initialDateString =
-    order?.confirm_reminder_date ||
-    order?.pickup_date ||
-    new Date().toISOString().slice(0, 10);
-
-  const initialCalendarDate =
-    parseDateString(initialDateString);
-
-  const [currentDate, setCurrentDate] =
-    useState(() =>
-      new Date(
-        initialCalendarDate.getFullYear(),
-        initialCalendarDate.getMonth(),
-        1
-      )
+  const medications =
+    (customer?.medications || []).filter(
+      (medication) => medication?.latest_order
     );
 
-  if (!medication || !order) {
+  if (medications.length === 0) {
     return (
       <section className="pending-card">
         <div className="pending-icon">
@@ -340,11 +321,40 @@ function ActiveCalendar({
     );
   }
 
-  const year =
-    currentDate.getFullYear();
+  const allOrders = medications.map(
+    (medication) => ({
+      medication,
+      order: medication.latest_order,
+    })
+  );
 
-  const month =
-    currentDate.getMonth();
+  const nextPickupItem = [...allOrders]
+    .filter(({ order }) => order.pickup_date)
+    .sort((a, b) =>
+      a.order.pickup_date.localeCompare(
+        b.order.pickup_date
+      )
+    )[0];
+
+  const initialDateString =
+    nextPickupItem?.order?.confirm_reminder_date ||
+    nextPickupItem?.order?.pickup_date ||
+    new Date().toISOString().slice(0, 10);
+
+  const initialCalendarDate =
+    parseDateString(initialDateString);
+
+  const [currentDate, setCurrentDate] =
+    useState(() =>
+      new Date(
+        initialCalendarDate.getFullYear(),
+        initialCalendarDate.getMonth(),
+        1
+      )
+    );
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
 
   const monthNames = [
     "มกราคม",
@@ -361,54 +371,35 @@ function ActiveCalendar({
     "ธันวาคม",
   ];
 
-  const thaiYear =
-    year + 543;
+  const thaiYear = year + 543;
 
-  const firstDay =
-    new Date(
-      year,
-      month,
-      1
-    ).getDay();
+  const firstDay = new Date(
+    year,
+    month,
+    1
+  ).getDay();
 
-  const daysInMonth =
-    new Date(
-      year,
-      month + 1,
-      0
-    ).getDate();
+  const daysInMonth = new Date(
+    year,
+    month + 1,
+    0
+  ).getDate();
 
   function prevMonth() {
     setCurrentDate(
-      new Date(
-        year,
-        month - 1,
-        1
-      )
+      new Date(year, month - 1, 1)
     );
   }
 
   function nextMonth() {
     setCurrentDate(
-      new Date(
-        year,
-        month + 1,
-        1
-      )
+      new Date(year, month + 1, 1)
     );
   }
 
-  /*
-    สร้างช่องปฏิทิน
-  */
-
   const calendarDays = [];
 
-  for (
-    let i = 0;
-    i < firstDay;
-    i++
-  ) {
+  for (let i = 0; i < firstDay; i++) {
     calendarDays.push(null);
   }
 
@@ -420,10 +411,6 @@ function ActiveCalendar({
     calendarDays.push(day);
   }
 
-  /*
-    วันที่ Event จริงจาก Supabase
-  */
-
   function getEventType(day) {
     const current =
       `${year}-${String(
@@ -432,31 +419,30 @@ function ActiveCalendar({
         day
       ).padStart(2, "0")}`;
 
-    if (
-      current ===
-      order.confirm_reminder_date
-    ) {
-      return "order";
+    const hasPickup = allOrders.some(
+      ({ order }) =>
+        order.pickup_date === current
+    );
+
+    if (hasPickup) {
+      return "pickup";
     }
 
-    if (
-      current ===
-      order.pickup_date
-    ) {
-      return "pickup";
+    const hasConfirmation = allOrders.some(
+      ({ order }) =>
+        order.confirm_reminder_date === current
+    );
+
+    if (hasConfirmation) {
+      return "order";
     }
 
     return null;
   }
 
-  const pickup =
+  const nextPickup =
     parseDateString(
-      order.pickup_date
-    );
-
-  const daysLeft =
-    calculateDaysLeft(
-      order.expected_runout_date
+      nextPickupItem.order.pickup_date
     );
 
   return (
@@ -471,30 +457,32 @@ function ActiveCalendar({
         <div className="next-row">
           <div className="date-box">
             <strong>
-              {pickup.getDate()}
+              {nextPickup.getDate()}
             </strong>
 
             <span>
               {shortMonth(
-                pickup.getMonth()
+                nextPickup.getMonth()
               )}
             </span>
           </div>
 
           <div className="next-info">
-            <h2>
-              นัดรับยา
-            </h2>
+            <h2>นัดรับยา</h2>
 
             <p>
               {formatThaiDate(
-                order.pickup_date
+                nextPickupItem.order.pickup_date
               )}
             </p>
 
             <small>
-              {customer.branch_name ||
-                "-"}
+              {nextPickupItem.medication.drug_name}
+              {nextPickupItem.medication.strength
+                ? ` ${nextPickupItem.medication.strength}`
+                : ""}
+              {" • "}
+              {customer.branch_name || "-"}
             </small>
           </div>
         </div>
@@ -504,9 +492,7 @@ function ActiveCalendar({
 
       <section className="calendar-card">
         <div className="calendar-heading">
-          <button
-            onClick={prevMonth}
-          >
+          <button onClick={prevMonth}>
             ‹
           </button>
 
@@ -515,9 +501,7 @@ function ActiveCalendar({
             {thaiYear}
           </strong>
 
-          <button
-            onClick={nextMonth}
-          >
+          <button onClick={nextMonth}>
             ›
           </button>
         </div>
@@ -548,9 +532,7 @@ function ActiveCalendar({
                 <Day
                   key={day}
                   value={day}
-                  type={getEventType(
-                    day
-                  )}
+                  type={getEventType(day)}
                 />
               );
             }
@@ -560,68 +542,111 @@ function ActiveCalendar({
         <div className="legend">
           <span>
             <i className="dot order-dot" />
-
             ยืนยันสั่งยา
           </span>
 
           <span>
             <i className="dot pickup-dot" />
-
             นัดรับยา
           </span>
         </div>
       </section>
 
-      {/* MEDICATION */}
+      {/* ALL MEDICATIONS */}
 
-      <section className="medicine-card">
-        <div className="medicine-header">
-          <span className="medicine-icon">
-            +
-          </span>
+      <div
+        style={{
+          marginTop: 14,
+          marginBottom: 7,
+          padding: "0 2px",
+          fontSize: 13,
+          fontWeight: 600,
+          color: "#33414d",
+        }}
+      >
+        ยาประจำของฉัน ({medications.length})
+      </div>
 
-          <div>
-            <small>
-              ยาประจำของฉัน
-            </small>
+      {allOrders.map(
+        ({ medication, order }) => {
+          const daysLeft =
+            calculateDaysLeft(
+              order.expected_runout_date
+            );
 
-            <h3>
-              {medication.drug_name}
+          return (
+            <div key={medication.id}>
+              <section className="medicine-card">
+                <div className="medicine-header">
+                  <span className="medicine-icon">
+                    +
+                  </span>
 
-              {medication.strength
-                ? ` ${medication.strength}`
-                : ""}
-            </h3>
-          </div>
+                  <div>
+                    <small>
+                      ยาประจำของฉัน
+                    </small>
 
-          <span className="days">
-            {daysLeft >= 0
-              ? `เหลือ ${daysLeft} วัน`
-              : "ถึงรอบรับยา"}
-          </span>
-        </div>
+                    <h3>
+                      {medication.drug_name}
+                      {medication.strength
+                        ? ` ${medication.strength}`
+                        : ""}
+                    </h3>
+                  </div>
 
-        <div className="medicine-bottom">
-          <span>
-            จำนวน{" "}
-            {medication.quantity ||
-              "-"}
-          </span>
+                  <span className="days">
+                    {daysLeft >= 0
+                      ? `เหลือ ${daysLeft} วัน`
+                      : "ถึงรอบรับยา"}
+                  </span>
+                </div>
 
-          <button>
-            ดูรายละเอียด
-          </button>
-        </div>
-      </section>
+                <div className="medicine-bottom">
+                  <span>
+                    จำนวน{" "}
+                    {medication.quantity || "-"}
+                  </span>
 
-      {/* STATUS */}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color:
+                        order.status === "confirmed"
+                          ? "#378b68"
+                          : order.status ===
+                            "waiting_confirmation"
+                          ? "#be821c"
+                          : "#687580",
+                    }}
+                  >
+                    {order.status === "confirmed"
+                      ? "✓ ยืนยันแล้ว"
+                      : order.status ===
+                        "waiting_confirmation"
+                      ? "รอยืนยัน"
+                      : order.status === "ordered"
+                      ? "กำลังสั่งยา"
+                      : order.status === "ready"
+                      ? "ยาพร้อมรับ"
+                      : order.status === "picked_up"
+                      ? "รับยาแล้ว"
+                      : order.status}
+                  </span>
+                </div>
+              </section>
 
-      <OrderStatusCard
-        order={order}
-        medication={medication}
-        idToken={idToken}
-        onRefresh={onRefresh}
-      />
+              <OrderStatusCard
+                order={order}
+                medication={medication}
+                idToken={idToken}
+                onRefresh={onRefresh}
+              />
+            </div>
+          );
+        }
+      )}
     </>
   );
 }
