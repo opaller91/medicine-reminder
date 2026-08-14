@@ -5,11 +5,16 @@ import {
   getAllCustomers,
   linkCustomer,
   addMedication,
+  getConfirmedOrders,
+  uploadOrderDocument,
+  getOrderDocumentUrl,
+  markReady,
 } from "./adminApi";
 
 function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [confirmedOrders, setConfirmedOrders] = useState([]);
   const [pharmacist, setPharmacist] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,31 @@ function AdminDashboard() {
     }
   }
 
+  async function loadConfirmedOrders() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const result =
+        await getConfirmedOrders();
+
+      setConfirmedOrders(
+        result.orders || []
+      );
+
+      setPharmacist(
+        result.pharmacist
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
+          "ไม่สามารถโหลดงานรอดำเนินการได้"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function changeTab(tab) {
     setActiveTab(tab);
 
@@ -61,6 +91,10 @@ function AdminDashboard() {
 
     if (tab === "customers") {
       await loadCustomers();
+    }
+
+    if (tab === "orders") {
+      await loadConfirmedOrders();
     }
   }
 
@@ -78,6 +112,8 @@ function AdminDashboard() {
           <h2 style={{ margin: "2px 0" }}>
             {activeTab === "pending"
               ? "ลูกค้ารอเชื่อม"
+              : activeTab === "orders"
+              ? "งานรอดำเนินการ"
               : "ลูกค้าทั้งหมด"}
           </h2>
 
@@ -110,6 +146,25 @@ function AdminDashboard() {
           รอเชื่อม
           {users.length > 0 && (
             <span style={styles.tabBadge}>{users.length}</span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => changeTab("orders")}
+          style={{
+            ...styles.tab,
+            ...(activeTab === "orders"
+              ? styles.activeTab
+              : {}),
+          }}
+        >
+          งานรอดำเนินการ
+
+          {confirmedOrders.length > 0 && (
+            <span style={styles.tabBadge}>
+              {confirmedOrders.length}
+            </span>
           )}
         </button>
 
@@ -186,6 +241,13 @@ function AdminDashboard() {
             </>
           )}
 
+          {activeTab === "orders" && (
+            <ConfirmedOrderList
+              orders={confirmedOrders}
+              onRefresh={loadConfirmedOrders}
+            />
+          )}
+
           {activeTab === "customers" && (
             <CustomerList
               customers={customers}
@@ -209,6 +271,353 @@ function AdminDashboard() {
   );
 }
 
+function ConfirmedOrderList({
+  orders,
+  onRefresh,
+}) {
+  if (orders.length === 0) {
+    return (
+      <div style={styles.empty}>
+        <div style={{ fontSize: 30 }}>✓</div>
+        <strong>ไม่มีงานรอดำเนินการ</strong>
+        <span style={styles.muted}>
+          เมื่อลูกค้ายืนยันสั่งยา หรือมีรายการรอยาพร้อมรับ
+          รายการจะปรากฏที่นี่
+        </span>
+      </div>
+    );
+  }
+
+  const confirmedCount = orders.filter(
+    (order) => order.status === "confirmed"
+  ).length;
+
+  const orderedCount = orders.filter(
+    (order) => order.status === "ordered"
+  ).length;
+
+  return (
+    <>
+      <div style={styles.summary}>
+        <strong style={styles.summaryNumber}>
+          {orders.length}
+        </strong>
+        <span>
+          งานรอดำเนินการ • รอสั่งยา {confirmedCount} • รอยาพร้อม {orderedCount}
+        </span>
+      </div>
+
+      <div style={styles.list}>
+        {orders.map((order) =>
+          order.status === "ordered" ? (
+            <ReadyOrderCard
+              key={order.id}
+              order={order}
+              onSaved={onRefresh}
+            />
+          ) : (
+            <ConfirmedOrderCard
+              key={order.id}
+              order={order}
+              onSaved={onRefresh}
+            />
+          )
+        )}
+      </div>
+    </>
+  );
+}
+
+function ReadyOrderCard({
+  order,
+  onSaved,
+}) {
+  const customer = getRelatedItem(order.customers);
+  const medication = getRelatedItem(order.medications);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submitReady() {
+    const confirmed = window.confirm(
+      "ยืนยันว่ารายการยานี้พร้อมให้ลูกค้ารับแล้วใช่หรือไม่?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const result = await markReady(order.id);
+
+      if (result?.line_notification_sent === false) {
+        alert(
+          "เปลี่ยนสถานะเป็นยาพร้อมรับแล้ว แต่ส่ง LINE ไม่สำเร็จ" +
+            (result?.line_notification_error
+              ? `\n${result.line_notification_error}`
+              : "")
+        );
+      } else {
+        alert("ยาพร้อมรับแล้ว และแจ้งลูกค้าทาง LINE เรียบร้อย");
+      }
+
+      await onSaved();
+    } catch (err) {
+      console.error("MARK READY ERROR:", err);
+      setError(
+        err?.message || "ไม่สามารถเปลี่ยนสถานะเป็นยาพร้อมรับได้"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={styles.orderTaskCard}>
+      <div style={styles.orderTaskHeader}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <small style={styles.muted}>สั่งยาเรียบร้อยแล้ว</small>
+          <h3 style={styles.orderTaskTitle}>
+            {customer?.full_name || "ไม่พบชื่อลูกค้า"}
+          </h3>
+          <div style={styles.muted}>
+            {customer?.phone || "-"}
+          </div>
+        </div>
+
+        <span style={styles.orderedBadge}>
+          รอยาพร้อม
+        </span>
+      </div>
+
+      <div style={styles.orderDrugBox}>
+        <strong>
+          {medication?.drug_name || "ไม่พบชื่อยา"}
+          {medication?.strength
+            ? ` ${medication.strength}`
+            : ""}
+        </strong>
+        <span>จำนวน {medication?.quantity ?? "-"}</span>
+        <span>
+          วิธีใช้ {medication?.dosage_instruction || "-"}
+        </span>
+      </div>
+
+      <div style={styles.orderTaskDates}>
+        <div>
+          <span style={styles.orderLabel}>สั่งยาเมื่อ</span>
+          <strong>
+            {formatThaiDateTime(order.ordered_at)}
+          </strong>
+        </div>
+        <div>
+          <span style={styles.orderLabel}>นัดรับยา</span>
+          <strong>
+            {formatThaiDate(order.pickup_date)}
+          </strong>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ ...styles.error, marginTop: 12 }}>
+          {error}
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={saving}
+        onClick={submitReady}
+        style={{
+          ...styles.readyButton,
+          ...(saving ? styles.disabledButton : {}),
+        }}
+      >
+        {saving ? "กำลังบันทึก..." : "✓ ยาพร้อมรับ"}
+      </button>
+    </div>
+  );
+}
+
+function ConfirmedOrderCard({
+  order,
+  onSaved,
+}) {
+  const customer = getRelatedItem(order.customers);
+  const medication = getRelatedItem(order.medications);
+  const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function selectFile(e) {
+    const selected = e.target.files?.[0] || null;
+    if (!selected) return;
+
+    if (!selected.type.startsWith("image/")) {
+      setError("กรุณาเลือกไฟล์รูปภาพ");
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+    if (selected.size > maxSize) {
+      setError("ไฟล์รูปต้องมีขนาดไม่เกิน 10 MB");
+      return;
+    }
+
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setError("");
+    setFile(selected);
+    setPreviewUrl(URL.createObjectURL(selected));
+  }
+
+  async function submitDocument() {
+    if (!file) {
+      setError("กรุณาแนบรูปใบยืนยันสั่งซื้อ");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      await uploadOrderDocument({ order_id: order.id, file });
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFile(null);
+      setPreviewUrl("");
+      alert("บันทึกใบยืนยันและส่งคำสั่งซื้อเรียบร้อย");
+      await onSaved();
+    } catch (err) {
+      console.error("ORDER DOCUMENT ERROR:", err);
+      setError(err?.message || "ไม่สามารถบันทึกเอกสารได้");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={styles.orderTaskCard}>
+      <div style={styles.orderTaskHeader}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <small style={styles.muted}>ลูกค้ายืนยันแล้ว</small>
+          <h3 style={styles.orderTaskTitle}>
+            {customer?.full_name || "ไม่พบชื่อลูกค้า"}
+          </h3>
+          <div style={styles.muted}>{customer?.phone || "-"}</div>
+        </div>
+        <span style={styles.confirmedBadge}>ยืนยันแล้ว</span>
+      </div>
+
+      <div style={styles.orderDrugBox}>
+        <strong>
+          {medication?.drug_name || "ไม่พบชื่อยา"}
+          {medication?.strength ? ` ${medication.strength}` : ""}
+        </strong>
+        <span>จำนวน {medication?.quantity ?? "-"}</span>
+        <span>วิธีใช้ {medication?.dosage_instruction || "-"}</span>
+      </div>
+
+      <div style={styles.orderTaskDates}>
+        <div>
+          <span style={styles.orderLabel}>ลูกค้ายืนยัน</span>
+          <strong>{formatThaiDateTime(order.confirmed_at)}</strong>
+        </div>
+        <div>
+          <span style={styles.orderLabel}>นัดรับยา</span>
+          <strong>{formatThaiDate(order.pickup_date)}</strong>
+        </div>
+      </div>
+
+      <div style={styles.documentArea}>
+        <div style={styles.documentHeading}>
+          <div>
+            <strong>ใบยืนยันสั่งซื้อยา</strong>
+            <div style={styles.muted}>ถ่ายรูปหรือเลือกภาพเอกสาร</div>
+          </div>
+          <label style={styles.uploadButton}>
+            {file ? "เปลี่ยนรูป" : "แนบรูป"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={selectFile}
+              style={{ display: "none" }}
+            />
+          </label>
+        </div>
+
+        {previewUrl ? (
+          <div style={styles.previewWrap}>
+            <img
+              src={previewUrl}
+              alt="ตัวอย่างใบยืนยันสั่งซื้อ"
+              style={styles.previewImage}
+            />
+            <div style={styles.previewName}>{file?.name}</div>
+          </div>
+        ) : (
+          <div style={styles.noDocument}>ยังไม่ได้แนบรูป</div>
+        )}
+      </div>
+
+      {error && <div style={styles.error}>{error}</div>}
+
+      <button
+        type="button"
+        disabled={!file || saving}
+        onClick={submitDocument}
+        style={{
+          ...styles.submitOrderButton,
+          ...((!file || saving) ? styles.disabledButton : {}),
+        }}
+      >
+        {saving ? "กำลังบันทึก..." : "ยืนยันส่งคำสั่งซื้อ"}
+      </button>
+    </div>
+  );
+}
+
+function getRelatedItem(value) {
+  if (Array.isArray(value)) {
+    return value[0] || null;
+  }
+
+  return value || null;
+}
+
+function formatThaiDateTime(
+  dateString
+) {
+  if (!dateString) {
+    return "-";
+  }
+
+  const date = new Date(
+    dateString
+  );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "th-TH",
+    {
+      day: "numeric",
+      month: "short",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone:
+        "Asia/Bangkok",
+    }
+  ).format(date);
+}
+
 function CustomerList({
   customers,
   onRefresh,
@@ -216,6 +625,11 @@ function CustomerList({
   const [
     selectedCustomer,
     setSelectedCustomer,
+  ] = useState(null);
+
+  const [
+    detailCustomer,
+    setDetailCustomer,
   ] = useState(null);
 
   if (customers.length === 0) {
@@ -287,6 +701,16 @@ function CustomerList({
               </div>
 
               <div style={styles.customerActions}>
+                <button
+                  type="button"
+                  style={styles.detailButton}
+                  onClick={() =>
+                    setDetailCustomer(customer)
+                  }
+                >
+                  ดูรายละเอียด
+                </button>
+
                 <button
                   type="button"
                   style={styles.addMedicationButton}
@@ -393,6 +817,15 @@ function CustomerList({
         })}
       </div>
 
+      {detailCustomer && (
+        <CustomerDetailModal
+          customer={detailCustomer}
+          onClose={() =>
+            setDetailCustomer(null)
+          }
+        />
+      )}
+
       {selectedCustomer && (
         <AddMedicationForm
           customer={selectedCustomer}
@@ -409,6 +842,261 @@ function CustomerList({
         />
       )}
     </>
+  );
+}
+
+function CustomerDetailModal({
+  customer,
+  onClose,
+}) {
+  const [
+    openingDocument,
+    setOpeningDocument,
+  ] = useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const medications =
+    customer.medications || [];
+
+  const history = medications
+    .flatMap((medication) => {
+      const orders =
+        medication.medication_orders ||
+        [];
+
+      return orders.map((order) => ({
+        ...order,
+        medication,
+      }));
+    })
+    .sort((a, b) => {
+      const aTime = new Date(
+        a.created_at || 0
+      ).getTime();
+
+      const bTime = new Date(
+        b.created_at || 0
+      ).getTime();
+
+      return bTime - aTime;
+    });
+
+  async function openDocument(order) {
+    if (!order.order_document_url) {
+      return;
+    }
+
+    try {
+      setOpeningDocument(order.id);
+      setError("");
+
+      const result =
+        await getOrderDocumentUrl(
+          order.id
+        );
+
+      if (!result?.signed_url) {
+        throw new Error(
+          "ไม่พบลิงก์เอกสาร"
+        );
+      }
+
+      window.open(
+        result.signed_url,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
+          "ไม่สามารถเปิดเอกสารได้"
+      );
+    } finally {
+      setOpeningDocument("");
+    }
+  }
+
+  return (
+    <div style={formStyles.overlay}>
+      <div style={formStyles.modal}>
+        <div style={formStyles.modalHeader}>
+          <div>
+            <small style={styles.muted}>
+              ประวัติลูกค้า
+            </small>
+
+            <h2
+              style={{
+                margin: "3px 0",
+              }}
+            >
+              {customer.full_name}
+            </h2>
+
+            <div style={styles.muted}>
+              {customer.phone || "-"}
+              {customer.branch_name
+                ? ` • ${customer.branch_name}`
+                : ""}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={formStyles.close}
+          >
+            ×
+          </button>
+        </div>
+
+        <SectionTitle>
+          ยาปัจจุบัน
+        </SectionTitle>
+
+        {medications.length === 0 ? (
+          <div style={styles.noMedication}>
+            ยังไม่มีข้อมูลยา
+          </div>
+        ) : (
+          medications.map(
+            (medication) => {
+              const latest =
+                medication.latest_order;
+
+              return (
+                <div
+                  key={medication.id}
+                  style={styles.detailMedication}
+                >
+                  <div>
+                    <strong>
+                      {medication.drug_name}
+                      {medication.strength
+                        ? ` ${medication.strength}`
+                        : ""}
+                    </strong>
+
+                    <div style={styles.muted}>
+                      {medication.dosage_instruction ||
+                        "-"}
+                    </div>
+                  </div>
+
+                  <OrderStatus
+                    status={latest?.status}
+                  />
+                </div>
+              );
+            }
+          )
+        )}
+
+        <SectionTitle>
+          ประวัติการสั่งยา
+        </SectionTitle>
+
+        {history.length === 0 ? (
+          <div style={styles.noMedication}>
+            ยังไม่มีประวัติการสั่งยา
+          </div>
+        ) : (
+          <div style={styles.historyList}>
+            {history.map((order) => (
+              <div
+                key={order.id}
+                style={styles.historyItem}
+              >
+                <div style={styles.historyTop}>
+                  <div>
+                    <strong>
+                      {
+                        order.medication
+                          .drug_name
+                      }
+                      {order.medication
+                        .strength
+                        ? ` ${order.medication.strength}`
+                        : ""}
+                    </strong>
+
+                    <div style={styles.muted}>
+                      นัดรับ{" "}
+                      {formatThaiDate(
+                        order.pickup_date
+                      )}
+                    </div>
+                  </div>
+
+                  <OrderStatus
+                    status={order.status}
+                  />
+                </div>
+
+                <div style={styles.historyMeta}>
+                  <span>
+                    สร้างรายการ{" "}
+                    {formatThaiDateTime(
+                      order.created_at
+                    )}
+                  </span>
+
+                  {order.confirmed_at && (
+                    <span>
+                      ยืนยัน{" "}
+                      {formatThaiDateTime(
+                        order.confirmed_at
+                      )}
+                    </span>
+                  )}
+
+                  {order.ordered_at && (
+                    <span>
+                      สั่งยา{" "}
+                      {formatThaiDateTime(
+                        order.ordered_at
+                      )}
+                    </span>
+                  )}
+                </div>
+
+                {order.order_document_url && (
+                  <button
+                    type="button"
+                    disabled={
+                      openingDocument ===
+                      order.id
+                    }
+                    onClick={() =>
+                      openDocument(order)
+                    }
+                    style={styles.documentViewButton}
+                  >
+                    {openingDocument ===
+                    order.id
+                      ? "กำลังเปิด..."
+                      : "ดูใบยืนยันสั่งซื้อ"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              ...styles.error,
+              marginTop: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1308,101 +1996,138 @@ function SectionTitle({ children }) {
 
 const styles = {
   page: {
-    maxWidth: 650,
+    width: "100%",
+    maxWidth: 720,
+    minHeight: "100vh",
     margin: "0 auto",
-    padding: 24,
+    padding: "22px 18px 40px",
     fontFamily:
-      "Noto Sans Thai, sans-serif",
+      '"Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    color: "#18323b",
+    background:
+      "linear-gradient(180deg, #f2fbfd 0%, #f7fafb 34%, #f7f8f9 100%)",
   },
 
   header: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems: "center",
-    marginBottom: 24,
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 20,
+    padding: "4px 2px 0",
   },
 
   muted: {
-    color: "#84919c",
+    color: "#81929a",
     fontSize: 12,
+    lineHeight: 1.55,
   },
 
   logout: {
-    border: 0,
-    background: "#f1f4f6",
-    borderRadius: 10,
-    padding: "8px 12px",
+    flexShrink: 0,
+    border: "1px solid #e4ecef",
+    background: "rgba(255,255,255,0.88)",
+    color: "#64757d",
+    borderRadius: 999,
+    padding: "8px 13px",
     cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 11,
+    boxShadow: "0 3px 12px rgba(31, 72, 86, 0.05)",
   },
 
   summary: {
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    padding: 18,
-    background: "#eaf6fa",
-    borderRadius: 16,
+    gap: 13,
+    padding: "17px 18px",
+    background:
+      "linear-gradient(135deg, #e9f8fb 0%, #f2fbf8 100%)",
+    border: "1px solid #dceff1",
+    borderRadius: 20,
     marginBottom: 16,
+    color: "#536a73",
+    boxShadow: "0 7px 22px rgba(39, 119, 143, 0.06)",
   },
 
   summaryNumber: {
-    fontSize: 22,
-    color: "#258fbb",
+    minWidth: 42,
+    height: 42,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 14,
+    fontSize: 21,
+    lineHeight: 1,
+    color: "#1689a8",
+    background: "rgba(255,255,255,0.82)",
+    boxShadow: "0 3px 10px rgba(39, 119, 143, 0.08)",
   },
 
   list: {
     display: "flex",
     flexDirection: "column",
-    gap: 10,
+    gap: 12,
   },
 
   customer: {
     display: "flex",
     alignItems: "center",
     gap: 12,
-    background: "white",
-    padding: 14,
-    borderRadius: 16,
-    border:
-      "1px solid #edf0f2",
+    background: "rgba(255,255,255,0.96)",
+    padding: 15,
+    borderRadius: 20,
+    border: "1px solid #e9eff1",
+    boxShadow: "0 7px 24px rgba(32, 70, 83, 0.055)",
   },
 
   avatar: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     borderRadius: "50%",
     objectFit: "cover",
+    border: "3px solid #ffffff",
+    boxShadow: "0 3px 12px rgba(33, 83, 99, 0.12)",
   },
 
   avatarPlaceholder: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
+    flexShrink: 0,
     borderRadius: "50%",
-    background: "#e8eef1",
+    background: "linear-gradient(135deg, #dff4f7, #e9f7f0)",
+    color: "#2689a1",
     display: "grid",
     placeItems: "center",
+    fontWeight: 700,
+    border: "3px solid #ffffff",
+    boxShadow: "0 3px 12px rgba(33, 83, 99, 0.10)",
   },
 
   customerInfo: {
     flex: 1,
+    minWidth: 0,
     display: "flex",
     flexDirection: "column",
     gap: 4,
   },
 
   pending: {
-    color: "#c68a25",
+    color: "#bd8121",
     fontSize: 11,
+    fontWeight: 600,
   },
 
   linkButton: {
+    flexShrink: 0,
     border: 0,
-    borderRadius: 10,
-    padding: "9px 12px",
-    background: "#258fbb",
+    borderRadius: 12,
+    padding: "10px 13px",
+    background: "linear-gradient(135deg, #238fb2, #43a9bd)",
     color: "white",
     cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 11,
+    boxShadow: "0 5px 14px rgba(37, 143, 187, 0.18)",
   },
 
   empty: {
@@ -1411,69 +2136,86 @@ const styles = {
     gap: 8,
     alignItems: "center",
     textAlign: "center",
-    padding: 40,
-    background: "white",
-    borderRadius: 18,
+    padding: "46px 24px",
+    background: "rgba(255,255,255,0.96)",
+    borderRadius: 22,
+    border: "1px solid #ebf0f2",
+    boxShadow: "0 8px 26px rgba(32, 70, 83, 0.05)",
   },
 
   error: {
-    padding: 12,
-    background: "#fff0f0",
-    color: "#bd4747",
-    borderRadius: 10,
+    padding: "11px 13px",
+    background: "#fff2f2",
+    color: "#b94d4d",
+    border: "1px solid #f6dddd",
+    borderRadius: 12,
     marginBottom: 12,
+    fontSize: 12,
   },
+
   tabs: {
-    display: "flex",
-    gap: 8,
-    marginBottom: 16,
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 6,
+    marginBottom: 18,
+    padding: 5,
+    background: "rgba(231, 239, 242, 0.82)",
+    borderRadius: 16,
   },
 
   tab: {
-    flex: 1,
+    minWidth: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    padding: "10px 12px",
+    gap: 5,
+    padding: "10px 7px",
     border: 0,
     borderRadius: 12,
-    background: "#eef2f4",
-    color: "#687580",
+    background: "transparent",
+    color: "#72838b",
     cursor: "pointer",
     fontWeight: 600,
+    fontSize: 11,
+    whiteSpace: "nowrap",
   },
 
   activeTab: {
-    background: "#258fbb",
-    color: "white",
+    background: "#ffffff",
+    color: "#187f9f",
+    boxShadow: "0 4px 14px rgba(38, 95, 113, 0.10)",
   },
 
   tabBadge: {
-    minWidth: 20,
-    height: 20,
-    padding: "0 6px",
+    minWidth: 19,
+    height: 19,
+    padding: "0 5px",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 999,
-    background: "rgba(255,255,255,0.24)",
-    fontSize: 10,
+    background: "#dff2f7",
+    color: "#187f9f",
+    fontSize: 9,
+    fontWeight: 700,
   },
 
   loadingBox: {
-    padding: 30,
+    padding: 34,
     textAlign: "center",
-    color: "#84919c",
+    color: "#81929a",
     background: "white",
-    borderRadius: 16,
+    borderRadius: 20,
+    border: "1px solid #eaf0f2",
+    boxShadow: "0 7px 24px rgba(32, 70, 83, 0.05)",
   },
 
   customerDetailCard: {
-    background: "white",
-    padding: 16,
-    borderRadius: 16,
-    border: "1px solid #edf0f2",
+    background: "rgba(255,255,255,0.97)",
+    padding: 17,
+    borderRadius: 20,
+    border: "1px solid #e8eef0",
+    boxShadow: "0 7px 24px rgba(32, 70, 83, 0.055)",
   },
 
   customerTop: {
@@ -1489,102 +2231,331 @@ const styles = {
   medicationBox: {
     display: "flex",
     flexDirection: "column",
-    gap: 3,
-    padding: 12,
-    borderRadius: 12,
-    background: "#f7fafb",
+    gap: 4,
+    padding: 13,
+    borderRadius: 14,
+    background: "#f5fafb",
+    border: "1px solid #edf3f4",
     fontSize: 12,
+    color: "#52656d",
   },
 
   customerActions: {
     display: "flex",
     justifyContent: "flex-end",
-    marginTop: 12,
+    gap: 7,
+    marginTop: 13,
   },
 
   addMedicationButton: {
     border: 0,
-    borderRadius: 10,
-    padding: "8px 11px",
-    background: "#eaf6fa",
-    color: "#258fbb",
+    borderRadius: 11,
+    padding: "9px 12px",
+    background: "#e7f6f9",
+    color: "#1c87a5",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 11,
+  },
+
+  detailButton: {
+    border: "1px solid #e5ecef",
+    borderRadius: 11,
+    padding: "9px 12px",
+    background: "#ffffff",
+    color: "#64767e",
     fontWeight: 600,
+    cursor: "pointer",
+    fontSize: 11,
+  },
+
+  detailMedication: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    padding: 13,
+    marginBottom: 8,
+    borderRadius: 14,
+    background: "#f6fafb",
+    border: "1px solid #edf2f3",
+  },
+
+  historyList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+
+  historyItem: {
+    padding: 14,
+    borderRadius: 15,
+    border: "1px solid #e7edef",
+    background: "#fbfdfd",
+  },
+
+  historyTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+
+  historyMeta: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop: "1px solid #edf1f3",
+    color: "#89979e",
+    fontSize: 10,
+  },
+
+  documentViewButton: {
+    width: "100%",
+    marginTop: 10,
+    padding: 10,
+    border: 0,
+    borderRadius: 11,
+    background: "#e8f6f9",
+    color: "#1d87a4",
+    fontWeight: 700,
     cursor: "pointer",
     fontSize: 11,
   },
 
   noMedication: {
     marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    background: "#f7fafb",
-    color: "#84919c",
+    padding: 13,
+    borderRadius: 13,
+    background: "#f6fafb",
+    border: "1px dashed #dde8eb",
+    color: "#84949b",
     fontSize: 12,
   },
 
   orderInfo: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 10,
+    gap: 9,
     marginTop: 10,
   },
 
   orderInfoItem: {
     display: "flex",
     flexDirection: "column",
-    gap: 3,
-    padding: 10,
-    borderRadius: 10,
-    background: "#fbfcfd",
+    gap: 4,
+    padding: 11,
+    borderRadius: 12,
+    background: "#fbfdfd",
+    border: "1px solid #eef2f3",
   },
 
   orderLabel: {
-    color: "#8996a3",
+    color: "#89979e",
     fontSize: 10,
   },
 
+  orderTaskCard: {
+    position: "relative",
+    overflow: "hidden",
+    background: "rgba(255,255,255,0.98)",
+    padding: 17,
+    borderRadius: 20,
+    border: "1px solid #e7eef0",
+    boxShadow: "0 8px 26px rgba(32, 70, 83, 0.06)",
+  },
+
+  orderTaskHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+
+  orderTaskTitle: {
+    margin: "3px 0 2px",
+    fontSize: 17,
+    lineHeight: 1.35,
+    color: "#17313a",
+    fontWeight: 700,
+  },
+
+  confirmedBadge: {
+    flexShrink: 0,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#e9f7ef",
+    color: "#27855f",
+    fontSize: 10,
+    fontWeight: 700,
+  },
+
+  orderDrugBox: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    marginTop: 14,
+    padding: 13,
+    borderRadius: 14,
+    background: "linear-gradient(135deg, #f5fafb, #f8fcfb)",
+    border: "1px solid #eaf1f2",
+    fontSize: 12,
+    color: "#566970",
+  },
+
+  orderTaskDates: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 9,
+    marginTop: 10,
+  },
+
+  documentArea: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTop: "1px solid #edf1f3",
+  },
+
+  documentHeading: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+
+  uploadButton: {
+    flexShrink: 0,
+    padding: "9px 12px",
+    borderRadius: 11,
+    background: "#e7f6f9",
+    color: "#1b87a5",
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  previewWrap: {
+    marginTop: 12,
+  },
+
+  previewImage: {
+    display: "block",
+    width: "100%",
+    maxHeight: 300,
+    objectFit: "contain",
+    borderRadius: 14,
+    background: "#f5f7f8",
+    border: "1px solid #edf1f3",
+  },
+
+  previewName: {
+    marginTop: 7,
+    color: "#84939a",
+    fontSize: 10,
+    overflowWrap: "anywhere",
+  },
+
+  noDocument: {
+    marginTop: 12,
+    padding: 20,
+    textAlign: "center",
+    border: "1px dashed #cfdfe4",
+    borderRadius: 14,
+    background: "#f9fcfd",
+    color: "#92a1a8",
+    fontSize: 11,
+  },
+
+  submitOrderButton: {
+    width: "100%",
+    marginTop: 14,
+    padding: 13,
+    border: 0,
+    borderRadius: 13,
+    background: "linear-gradient(135deg, #238fb2, #43a9bd)",
+    color: "white",
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(37, 143, 187, 0.18)",
+  },
+
+  orderedBadge: {
+    flexShrink: 0,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#e8f3fb",
+    color: "#287da4",
+    fontSize: 10,
+    fontWeight: 700,
+  },
+
+  readyButton: {
+    width: "100%",
+    marginTop: 14,
+    padding: 13,
+    border: 0,
+    borderRadius: 13,
+    background: "linear-gradient(135deg, #278d74, #42aa8b)",
+    color: "white",
+    fontWeight: 700,
+    cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(39, 141, 116, 0.18)",
+  },
+
+  disabledButton: {
+    opacity: 0.45,
+    cursor: "not-allowed",
+    boxShadow: "none",
+  },
 };
 
 const formStyles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background:
-      "rgba(17, 35, 52, 0.45)",
+    background: "rgba(20, 42, 51, 0.50)",
+    backdropFilter: "blur(4px)",
+    WebkitBackdropFilter: "blur(4px)",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
     zIndex: 999,
   },
 
   modal: {
     width: "100%",
-    maxWidth: 540,
-    maxHeight: "90vh",
+    maxWidth: 560,
+    maxHeight: "92vh",
     overflowY: "auto",
-    background: "white",
-    borderRadius: 22,
+    background: "#ffffff",
+    borderRadius: 24,
     padding: 22,
-    boxShadow:
-      "0 20px 60px rgba(0,0,0,0.18)",
+    border: "1px solid rgba(255,255,255,0.75)",
+    boxShadow: "0 24px 70px rgba(18, 48, 59, 0.22)",
   },
 
   modalHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
     marginBottom: 16,
+    paddingBottom: 13,
+    borderBottom: "1px solid #edf2f3",
   },
 
   close: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
+    flexShrink: 0,
     border: 0,
     borderRadius: "50%",
-    background: "#f2f5f7",
-    fontSize: 20,
+    background: "#f1f5f6",
+    color: "#61737b",
+    fontSize: 21,
+    lineHeight: 1,
     cursor: "pointer",
   },
 
@@ -1592,32 +2563,38 @@ const formStyles = {
     display: "flex",
     alignItems: "center",
     gap: 12,
-    padding: 12,
-    background: "#f7fafb",
-    borderRadius: 14,
+    padding: 13,
+    background: "linear-gradient(135deg, #f2fafb, #f5fbf8)",
+    border: "1px solid #e4f0f1",
+    borderRadius: 16,
     marginBottom: 20,
   },
 
   sectionTitle: {
-    margin: "20px 0 10px",
+    margin: "22px 0 11px",
     fontSize: 15,
+    lineHeight: 1.4,
+    color: "#203b44",
+    fontWeight: 700,
   },
 
   field: {
     display: "flex",
     flexDirection: "column",
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 13,
     fontSize: 12,
-    color: "#55616d",
+    color: "#53666e",
+    fontWeight: 600,
   },
 
   input: {
     width: "100%",
-    padding: "11px 12px",
-    border:
-      "1px solid #dfe5e8",
-    borderRadius: 10,
+    padding: "12px 13px",
+    border: "1px solid #dce6e9",
+    borderRadius: 12,
+    background: "#fbfdfd",
+    color: "#213b44",
     fontFamily: "inherit",
     fontSize: 13,
     outline: "none",
@@ -1625,10 +2602,10 @@ const formStyles = {
 
   medicationEditor: {
     marginBottom: 16,
-    padding: 14,
-    border: "1px solid #e4eaed",
-    borderRadius: 14,
-    background: "#fbfcfd",
+    padding: 15,
+    border: "1px solid #e3ecee",
+    borderRadius: 17,
+    background: "#fafcfc",
   },
 
   medicationEditorHeader: {
@@ -1636,30 +2613,31 @@ const formStyles = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    marginBottom: 10,
-    color: "#253442",
+    marginBottom: 11,
+    color: "#253f48",
     fontSize: 13,
   },
 
   removeMedication: {
     border: 0,
     background: "#fff0f0",
-    color: "#bd4747",
-    borderRadius: 9,
-    padding: "7px 9px",
+    color: "#b94e4e",
+    borderRadius: 10,
+    padding: "7px 10px",
     cursor: "pointer",
     fontSize: 11,
+    fontWeight: 600,
   },
 
   addMedication: {
     width: "100%",
     marginTop: 4,
     padding: 12,
-    border: "1px dashed #8fc4d8",
-    borderRadius: 12,
-    background: "#f4fafc",
-    color: "#258fbb",
-    fontWeight: 600,
+    border: "1px dashed #8fc8d6",
+    borderRadius: 13,
+    background: "#f3fafc",
+    color: "#2187a4",
+    fontWeight: 700,
     cursor: "pointer",
   },
 
@@ -1668,35 +2646,42 @@ const formStyles = {
     flexDirection: "column",
     gap: 10,
     marginTop: 16,
-    padding: 14,
-    borderRadius: 14,
-    background: "#f4fafc",
+    padding: 15,
+    borderRadius: 15,
+    background: "linear-gradient(135deg, #edf8fb, #f3faf7)",
+    border: "1px solid #e0eff1",
+    color: "#4f666e",
   },
 
   actions: {
     display: "flex",
     gap: 10,
-    marginTop: 20,
+    marginTop: 22,
+    paddingTop: 16,
+    borderTop: "1px solid #edf2f3",
   },
 
   cancel: {
     flex: 1,
     padding: 13,
-    border: 0,
-    borderRadius: 11,
-    background: "#eef2f4",
+    border: "1px solid #e2eaec",
+    borderRadius: 12,
+    background: "#f5f7f8",
+    color: "#687980",
     cursor: "pointer",
+    fontWeight: 600,
   },
 
   save: {
     flex: 2,
     padding: 13,
     border: 0,
-    borderRadius: 11,
-    background: "#258fbb",
+    borderRadius: 12,
+    background: "linear-gradient(135deg, #238fb2, #43a9bd)",
     color: "white",
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(37, 143, 187, 0.18)",
   },
 };
 

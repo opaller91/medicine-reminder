@@ -50,7 +50,6 @@ export async function getPendingLineUsers() {
 
 // ==============================
 // เชื่อมลูกค้าครั้งแรก
-// รองรับ medications หลายรายการ
 // ==============================
 
 export async function linkCustomer(payload) {
@@ -79,4 +78,157 @@ export async function addMedication(payload) {
     action: "add_medication",
     ...payload,
   });
+}
+
+// ==============================
+// งานที่ลูกค้ายืนยันแล้ว
+// ==============================
+
+export async function getConfirmedOrders() {
+  return callAdminApi({
+    action: "list_confirmed_orders",
+  });
+}
+
+// ==============================
+// อัปโหลดใบยืนยันสั่งซื้อผ่าน Edge Function
+// ==============================
+
+export async function uploadOrderDocument({
+  order_id,
+  file,
+}) {
+  if (!order_id) {
+    throw new Error(
+      "ไม่พบ order_id"
+    );
+  }
+
+  if (!file) {
+    throw new Error(
+      "กรุณาเลือกไฟล์"
+    );
+  }
+
+  const file_base64 =
+    await fileToBase64(file);
+
+  return callAdminApi({
+    action:
+      "upload_order_document",
+
+    order_id,
+
+    file_base64,
+
+    file_name:
+      file.name ||
+      "order-document.jpg",
+
+    content_type:
+      file.type ||
+      "image/jpeg",
+  });
+}
+
+// ==============================
+// เปิดใบยืนยันสั่งซื้อย้อนหลัง
+// Private Storage → Signed URL
+// ==============================
+
+export async function getOrderDocumentUrl(
+  order_id
+) {
+  if (!order_id) {
+    throw new Error(
+      "ไม่พบ order_id"
+    );
+  }
+
+  return callAdminApi({
+    action:
+      "get_order_document_url",
+    order_id,
+  });
+}
+
+// ==============================
+// เปลี่ยนสถานะ ordered -> ready
+// และให้ Edge Function ส่ง LINE แจ้งลูกค้า
+// ==============================
+
+export async function markReady(
+  order_id
+) {
+  if (!order_id) {
+    throw new Error(
+      "ไม่พบ order_id"
+    );
+  }
+
+  return callAdminApi({
+    action: "mark_ready",
+    order_id,
+  });
+}
+
+// ==============================
+// FILE → BASE64
+// ==============================
+
+function fileToBase64(file) {
+  return new Promise(
+    (resolve, reject) => {
+      const reader =
+        new FileReader();
+
+      reader.onload = () => {
+        const result =
+          String(
+            reader.result || ""
+          );
+
+        if (!result) {
+          reject(
+            new Error(
+              "ไม่สามารถอ่านไฟล์ได้"
+            )
+          );
+
+          return;
+        }
+
+        const base64 =
+          result.includes(",")
+            ? result
+                .split(",")
+                .pop()
+            : result;
+
+        if (!base64) {
+          reject(
+            new Error(
+              "ไม่สามารถแปลงไฟล์ได้"
+            )
+          );
+
+          return;
+        }
+
+        resolve(base64);
+      };
+
+      reader.onerror = () => {
+        reject(
+          new Error(
+            "ไม่สามารถอ่านไฟล์ได้"
+          )
+        );
+      };
+
+      reader.readAsDataURL(
+        file
+      );
+    }
+  );
 }

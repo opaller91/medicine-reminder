@@ -95,7 +95,6 @@ Deno.serve(async (req) => {
         line_user_row_id,
         full_name,
         phone,
-        branch_name,
         medications,
       } = body;
 
@@ -181,9 +180,7 @@ Deno.serve(async (req) => {
           full_name,
           phone: phone || null,
           branch_name:
-            branch_name ||
-            pharmacist.branch_name ||
-            null,
+            pharmacist.branch_name || null,
         })
         .select()
         .single();
@@ -475,6 +472,7 @@ Deno.serve(async (req) => {
               ordered_at,
               ready_at,
               picked_up_at,
+              order_document_url,
               created_at
             )
           )
@@ -520,6 +518,966 @@ Deno.serve(async (req) => {
         customers,
       });
     }
+    // ====================================
+    // ACTION 5 : LIST CONFIRMED ORDERS
+    // งานที่ลูกค้ากดยืนยันแล้ว รอเภสัชกรดำเนินการ
+    // ====================================
+
+    if (body.action === "list_confirmed_orders") {
+      const { data, error } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          customer_id,
+          medication_id,
+          status,
+          expected_runout_date,
+          confirm_reminder_date,
+          pickup_date,
+          confirmed_at,
+          ordered_at,
+          created_at,
+
+          customers (
+            id,
+            full_name,
+            phone,
+            branch_name
+          ),
+
+          medications (
+            id,
+            drug_name,
+            strength,
+            quantity,
+            dosage_instruction,
+            start_date,
+            days_supply
+          )
+        `)
+        .in("status", [
+          "confirmed",
+          "ordered",
+        ])
+        .order("created_at", {
+          ascending: true,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      const orders = (data || []).filter((order) => {
+        if (!pharmacist.branch_name) {
+          return true;
+        }
+
+        const customer = getRelatedCustomer(
+          order.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+        return (
+          customer?.branch_name ===
+          pharmacist.branch_name
+        );
+      });
+
+      return json({
+        success: true,
+        pharmacist,
+        orders,
+      });
+    }
+
+    // ====================================
+    // ACTION 6 : UPLOAD ORDER DOCUMENT
+    // รับรูปเป็น base64 -> upload ด้วย service role
+    // -> บันทึก path -> confirmed -> ordered
+    // ====================================
+
+    if (body.action === "upload_order_document") {
+      const {
+        order_id,
+        file_base64,
+        file_name,
+        content_type,
+      } = body;
+
+      if (!order_id || !file_base64) {
+        return json(
+          {
+            error:
+              "กรุณาระบุ order_id และไฟล์เอกสาร",
+          },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          status,
+          customer_id,
+          pickup_date,
+          customers (
+            full_name,
+            branch_name
+          ),
+          medications (
+            drug_name,
+            strength
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          { error: "ไม่พบรายการสั่งยานี้" },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดำเนินการรายการของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      if (existingOrder.status !== "confirmed") {
+        return json(
+          {
+            error:
+              "รายการนี้ไม่ได้อยู่ในสถานะ confirmed",
+          },
+          409
+        );
+      }
+
+      const normalizedBase64 =
+        String(file_base64).includes(",")
+          ? String(file_base64).split(",").pop()!
+          : String(file_base64);
+
+      let fileBytes: Uint8Array;
+
+      try {
+        fileBytes =
+          decodeBase64ToUint8Array(
+            normalizedBase64
+          );
+      } catch {
+        return json(
+          {
+            error:
+              "ไม่สามารถอ่านไฟล์รูปภาพได้",
+          },
+          400
+        );
+      }
+
+      // จำกัด 10 MB
+      if (
+        fileBytes.byteLength >
+        10 * 1024 * 1024
+      ) {
+        return json(
+          {
+            error:
+              "ไฟล์รูปต้องมีขนาดไม่เกิน 10 MB",
+          },
+          400
+        );
+      }
+
+      const safeExtension =
+        getSafeExtension(
+          file_name,
+          content_type
+        );
+
+      const storagePath =
+        `${order_id}/` +
+        `${Date.now()}.${safeExtension}`;
+
+      const {
+        error: uploadError,
+      } = await supabase.storage
+        .from("order-documents")
+        .upload(
+          storagePath,
+          fileBytes,
+          {
+            contentType:
+              content_type ||
+              "image/jpeg",
+            cacheControl: "3600",
+            upsert: false,
+          }
+        );
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const {
+        data: order,
+        error: updateError,
+      } = await supabase
+        .from("medication_orders")
+        .update({
+          order_document_url:
+            storagePath,
+          status: "ordered",
+          ordered_at:
+            new Date().toISOString(),
+        })
+        .eq("id", order_id)
+        .eq("status", "confirmed")
+        .select()
+        .single();
+
+      if (updateError) {
+        // ถ้า update DB ไม่สำเร็จ ลบไฟล์ที่เพิ่ง upload
+        await supabase.storage
+          .from("order-documents")
+          .remove([storagePath]);
+
+        throw updateError;
+      }
+
+      // 4. แจ้งลูกค้าทาง LINE หลังเปลี่ยนเป็น ordered สำเร็จ
+      // ถ้า LINE ส่งไม่สำเร็จ จะไม่ rollback order/เอกสาร
+      let lineNotificationSent = false;
+      let lineNotificationError: string | null = null;
+
+      try {
+        const {
+          data: lineUser,
+          error: lineUserError,
+        } = await supabase
+          .from("line_users")
+          .select(
+            "line_user_id, display_name, status"
+          )
+          .eq(
+            "customer_id",
+            existingOrder.customer_id
+          )
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (lineUserError) {
+          throw lineUserError;
+        }
+
+        if (!lineUser?.line_user_id) {
+          throw new Error(
+            "ไม่พบ LINE user ของลูกค้าคนนี้"
+          );
+        }
+
+        const accessToken =
+          Deno.env.get(
+            "LINE_CHANNEL_ACCESS_TOKEN"
+          );
+
+        if (!accessToken) {
+          throw new Error(
+            "LINE_CHANNEL_ACCESS_TOKEN is missing"
+          );
+        }
+
+        const liffId =
+          Deno.env.get("LINE_LIFF_ID");
+
+        if (!liffId) {
+          throw new Error(
+            "LINE_LIFF_ID is missing"
+          );
+        }
+
+        const relatedMedication =
+          getRelatedMedication(
+            existingOrder.medications
+          );
+
+        const drugName =
+          typeof relatedMedication?.drug_name ===
+          "string"
+            ? relatedMedication.drug_name
+            : "ยาของคุณ";
+
+        const strength =
+          typeof relatedMedication?.strength ===
+            "string" &&
+          relatedMedication.strength
+            ? ` ${relatedMedication.strength}`
+            : "";
+
+        const pickupDate =
+          typeof existingOrder.pickup_date ===
+          "string"
+            ? formatThaiDate(
+                existingOrder.pickup_date
+              )
+            : "-";
+
+        const customerAppUrl =
+          `https://liff.line.me/${liffId}`;
+
+        const lineResponse = await fetch(
+          "https://api.line.me/v2/bot/message/push",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              to: lineUser.line_user_id,
+              messages: [
+                {
+                  type: "template",
+                  altText:
+                    `ดำเนินการสั่ง ${drugName}${strength} แล้ว`,
+                  template: {
+                    type: "buttons",
+                    title:
+                      "ดำเนินการสั่งยาแล้ว",
+                    text:
+                      `${drugName}${strength}\n` +
+                      `นัดรับยา ${pickupDate}`,
+                    actions: [
+                      {
+                        type: "uri",
+                        label:
+                          "ดูปฏิทินยา",
+                        uri:
+                          customerAppUrl,
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          }
+        );
+
+        if (!lineResponse.ok) {
+          const detail =
+            await lineResponse.text();
+
+          throw new Error(
+            `LINE API error: ${detail}`
+          );
+        }
+
+        lineNotificationSent = true;
+      } catch (lineError) {
+        lineNotificationError =
+          lineError instanceof Error
+            ? lineError.message
+            : "ส่ง LINE ไม่สำเร็จ";
+
+        console.error(
+          "ORDERED LINE NOTIFICATION ERROR:",
+          lineError
+        );
+      }
+
+      return json({
+        success: true,
+        order,
+        document_path:
+          storagePath,
+        line_notification_sent:
+          lineNotificationSent,
+        line_notification_error:
+          lineNotificationError,
+      });
+    }
+
+    // ====================================
+    // ACTION 6 : SAVE ORDER DOCUMENT
+    // ผูก URL/Path รูปใบยืนยันสั่งซื้อกับ order
+    // ====================================
+
+    if (body.action === "save_order_document") {
+      const {
+        order_id,
+        document_url,
+      } = body;
+
+      if (!order_id || !document_url) {
+        return json(
+          {
+            error:
+              "กรุณาระบุ order_id และ document_url",
+          },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          status,
+          customer_id,
+          customers (
+            branch_name
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          {
+            error: "ไม่พบรายการสั่งยานี้",
+          },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดำเนินการรายการของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      if (existingOrder.status !== "confirmed") {
+        return json(
+          {
+            error:
+              "บันทึกเอกสารได้เฉพาะรายการที่ลูกค้ายืนยันแล้ว",
+          },
+          409
+        );
+      }
+
+      const {
+        data: order,
+        error,
+      } = await supabase
+        .from("medication_orders")
+        .update({
+          order_document_url:
+            document_url,
+        })
+        .eq("id", order_id)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return json({
+        success: true,
+        order,
+      });
+    }
+
+    // ====================================
+    // ACTION 7 : MARK ORDERED
+    // confirmed -> ordered
+    // ====================================
+
+    if (body.action === "mark_ordered") {
+      const { order_id } = body;
+
+      if (!order_id) {
+        return json(
+          {
+            error: "Missing order_id",
+          },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          status,
+          customer_id,
+          order_document_url,
+          customers (
+            branch_name
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          {
+            error: "ไม่พบรายการสั่งยานี้",
+          },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดำเนินการรายการของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      if (existingOrder.status !== "confirmed") {
+        return json(
+          {
+            error:
+              "รายการนี้ไม่ได้อยู่ในสถานะ confirmed",
+          },
+          409
+        );
+      }
+
+      if (!existingOrder.order_document_url) {
+        return json(
+          {
+            error:
+              "กรุณาแนบใบยืนยันสั่งซื้อก่อน",
+          },
+          400
+        );
+      }
+
+      const {
+        data: order,
+        error,
+      } = await supabase
+        .from("medication_orders")
+        .update({
+          status: "ordered",
+          ordered_at:
+            new Date().toISOString(),
+        })
+        .eq("id", order_id)
+        .eq("status", "confirmed")
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return json({
+        success: true,
+        order,
+      });
+    }
+
+    // ====================================
+    // ACTION 8 : MARK READY
+    // ordered -> ready + แจ้งลูกค้าทาง LINE
+    // ====================================
+
+    if (body.action === "mark_ready") {
+      const { order_id } = body;
+
+      if (!order_id) {
+        return json(
+          { error: "Missing order_id" },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          status,
+          customer_id,
+          pickup_date,
+          customers (
+            branch_name
+          ),
+          medications (
+            drug_name,
+            strength
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          { error: "ไม่พบรายการสั่งยานี้" },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดำเนินการรายการของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      if (existingOrder.status !== "ordered") {
+        return json(
+          {
+            error:
+              "รายการนี้ไม่ได้อยู่ในสถานะ ordered",
+          },
+          409
+        );
+      }
+
+      const {
+        data: order,
+        error: updateError,
+      } = await supabase
+        .from("medication_orders")
+        .update({
+          status: "ready",
+          ready_at:
+            new Date().toISOString(),
+        })
+        .eq("id", order_id)
+        .eq("status", "ordered")
+        .select()
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      let lineNotificationSent = false;
+      let lineNotificationError:
+        string | null = null;
+
+      try {
+        const {
+          data: lineUser,
+          error: lineUserError,
+        } = await supabase
+          .from("line_users")
+          .select(
+            "line_user_id, display_name, status"
+          )
+          .eq(
+            "customer_id",
+            existingOrder.customer_id
+          )
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (lineUserError) {
+          throw lineUserError;
+        }
+
+        if (!lineUser?.line_user_id) {
+          throw new Error(
+            "ไม่พบ LINE user ของลูกค้าคนนี้"
+          );
+        }
+
+        const accessToken =
+          Deno.env.get(
+            "LINE_CHANNEL_ACCESS_TOKEN"
+          );
+
+        const liffId =
+          Deno.env.get("LINE_LIFF_ID");
+
+        if (!accessToken) {
+          throw new Error(
+            "LINE_CHANNEL_ACCESS_TOKEN is missing"
+          );
+        }
+
+        if (!liffId) {
+          throw new Error(
+            "LINE_LIFF_ID is missing"
+          );
+        }
+
+        const medication =
+          getRelatedMedication(
+            existingOrder.medications
+          );
+
+        const drugName =
+          typeof medication?.drug_name ===
+          "string"
+            ? medication.drug_name
+            : "ยาของคุณ";
+
+        const strength =
+          typeof medication?.strength ===
+            "string" &&
+          medication.strength
+            ? ` ${medication.strength}`
+            : "";
+
+        const pickupDate =
+          typeof existingOrder.pickup_date ===
+          "string"
+            ? formatThaiDate(
+                existingOrder.pickup_date
+              )
+            : "-";
+
+        const lineResponse = await fetch(
+          "https://api.line.me/v2/bot/message/push",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              to: lineUser.line_user_id,
+              messages: [
+                {
+                  type: "template",
+                  altText:
+                    `${drugName}${strength} พร้อมรับแล้ว`,
+                  template: {
+                    type: "buttons",
+                    title:
+                      "ยาพร้อมรับแล้ว",
+                    text:
+                      `${drugName}${strength}\n` +
+                      `นัดรับยา ${pickupDate}`,
+                    actions: [
+                      {
+                        type: "uri",
+                        label:
+                          "ดูรายละเอียด",
+                        uri:
+                          `https://liff.line.me/${liffId}`,
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          }
+        );
+
+        if (!lineResponse.ok) {
+          const detail =
+            await lineResponse.text();
+
+          throw new Error(
+            `LINE API error: ${detail}`
+          );
+        }
+
+        lineNotificationSent = true;
+      } catch (lineError) {
+        lineNotificationError =
+          lineError instanceof Error
+            ? lineError.message
+            : "ส่ง LINE ไม่สำเร็จ";
+
+        console.error(
+          "READY LINE NOTIFICATION ERROR:",
+          lineError
+        );
+      }
+
+      return json({
+        success: true,
+        order,
+        line_notification_sent:
+          lineNotificationSent,
+        line_notification_error:
+          lineNotificationError,
+      });
+    }
+
+    // ====================================
+    // ACTION 9 : GET ORDER DOCUMENT SIGNED URL
+    // สร้าง signed URL ชั่วคราวสำหรับดูเอกสารย้อนหลัง
+    // ====================================
+
+    if (body.action === "get_order_document_url") {
+      const { order_id } = body;
+
+      if (!order_id) {
+        return json(
+          { error: "Missing order_id" },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          customer_id,
+          order_document_url,
+          customers (
+            branch_name
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          { error: "ไม่พบรายการสั่งยานี้" },
+          404
+        );
+      }
+
+      if (!existingOrder.order_document_url) {
+        return json(
+          { error: "รายการนี้ยังไม่มีเอกสาร" },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดูเอกสารของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      const {
+        data: signedData,
+        error: signedError,
+      } = await supabase.storage
+        .from("order-documents")
+        .createSignedUrl(
+          existingOrder.order_document_url,
+          60 * 10
+        );
+
+      if (signedError) {
+        throw signedError;
+      }
+
+      return json({
+        success: true,
+        signed_url:
+          signedData.signedUrl,
+      });
+    }
+
     // ====================================
     // UNKNOWN ACTION
     // ====================================
@@ -581,6 +1539,134 @@ function addDaysToDateString(
 // ====================================
 // HELPER : JSON RESPONSE
 // ====================================
+function getRelatedCustomer(
+  customers: unknown
+): Record<string, unknown> | null {
+  if (Array.isArray(customers)) {
+    return (
+      (customers[0] as Record<string, unknown>) ||
+      null
+    );
+  }
+
+  if (
+    customers &&
+    typeof customers === "object"
+  ) {
+    return customers as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function decodeBase64ToUint8Array(
+  base64: string
+) {
+  const binary = atob(base64);
+  const bytes =
+    new Uint8Array(binary.length);
+
+  for (
+    let i = 0;
+    i < binary.length;
+    i++
+  ) {
+    bytes[i] =
+      binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+function getSafeExtension(
+  fileName?: string,
+  contentType?: string
+) {
+  const fromName =
+    fileName
+      ?.split(".")
+      .pop()
+      ?.toLowerCase()
+      .replace(
+        /[^a-z0-9]/g,
+        ""
+      );
+
+  if (
+    fromName &&
+    fromName.length <= 5
+  ) {
+    return fromName;
+  }
+
+  const map: Record<
+    string,
+    string
+  > = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif",
+  };
+
+  return (
+    map[contentType || ""] ||
+    "jpg"
+  );
+}
+
+function getRelatedMedication(
+  medications: unknown
+): Record<string, unknown> | null {
+  if (Array.isArray(medications)) {
+    return (
+      (medications[0] as Record<
+        string,
+        unknown
+      >) || null
+    );
+  }
+
+  if (
+    medications &&
+    typeof medications === "object"
+  ) {
+    return medications as Record<
+      string,
+      unknown
+    >;
+  }
+
+  return null;
+}
+
+function formatThaiDate(
+  dateString: string
+) {
+  const [year, month, day] =
+    dateString
+      .split("-")
+      .map(Number);
+
+  return new Intl.DateTimeFormat(
+    "th-TH",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }
+  ).format(
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    )
+  );
+}
 
 function json(
   data: unknown,
