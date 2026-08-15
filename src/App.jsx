@@ -5,6 +5,7 @@ import {
   getCalendar,
   confirmOrder,
   getOrderDocument,
+  getPrescriptionDocument,
 } from "./api";
 
 import AdminLogin from "./AdminLogin";
@@ -308,6 +309,19 @@ function ActiveCalendar({
 
   const [documentError, setDocumentError] =
     useState("");
+  const [
+    documentTitle,
+    setDocumentTitle,
+  ] = useState(
+    "ใบยืนยันการสั่งซื้อ"
+  );
+
+  const [
+    documentSubtitle,
+    setDocumentSubtitle,
+  ] = useState(
+    "เอกสารที่เภสัชกรแนบ"
+  );
 
   async function openOrderDocument(orderId) {
     if (!idToken) {
@@ -322,14 +336,22 @@ function ActiveCalendar({
       setDocumentError("");
 
       const result =
-        await getOrderDocument(
-          idToken,
-          orderId
-        );
-
-      setDocumentUrl(
-        result.document_url
+      await getOrderDocument(
+        idToken,
+        orderId
       );
+
+    setDocumentTitle(
+      "ใบยืนยันการสั่งซื้อ"
+    );
+
+    setDocumentSubtitle(
+      "เอกสารยืนยันการสั่งซื้อจากเภสัชกร"
+    );
+
+    setDocumentUrl(
+      result.document_url
+    );
     } catch (err) {
       console.error(
         "GET ORDER DOCUMENT ERROR:",
@@ -339,6 +361,53 @@ function ActiveCalendar({
       setDocumentError(
         err?.message ||
           "ไม่สามารถเปิดใบยืนยันการสั่งซื้อได้"
+      );
+    } finally {
+      setDocumentLoading(false);
+    }
+  }
+
+  async function openPrescriptionDocument(
+    medicationId
+  ) {
+    if (!idToken) {
+      setDocumentError(
+        "ไม่พบข้อมูล LINE กรุณาเปิดใหม่ผ่าน LINE"
+      );
+
+      return;
+    }
+
+    try {
+      setDocumentLoading(true);
+      setDocumentError("");
+
+      const result =
+        await getPrescriptionDocument(
+          idToken,
+          medicationId
+        );
+
+      setDocumentTitle(
+        "ใบสั่งยาจากแพทย์"
+      );
+
+      setDocumentSubtitle(
+        "เอกสารประกอบการใช้ยาของคุณ"
+      );
+
+      setDocumentUrl(
+        result.document_url
+      );
+    } catch (err) {
+      console.error(
+        "GET PRESCRIPTION DOCUMENT ERROR:",
+        err
+      );
+
+      setDocumentError(
+        err?.message ||
+          "ไม่สามารถเปิดใบสั่งยาจากแพทย์ได้"
       );
     } finally {
       setDocumentLoading(false);
@@ -1042,39 +1111,108 @@ function ActiveCalendar({
                     </span>
                   </div>
 
-                  {[
-                    "ordered",
-                    "ready",
-                    "picked_up",
-                  ].includes(order.status) &&
-                    order.order_document_url && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openOrderDocument(order.id)
-                        }
-                        disabled={documentLoading}
+                  {/* เอกสารของฉัน */}
+                  {(medication.prescription_document_url ||
+                    ([
+                      "ordered",
+                      "ready",
+                      "picked_up",
+                    ].includes(order.status) &&
+                      order.order_document_url)) && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        paddingTop: 10,
+                        borderTop:
+                          "1px solid #edf1f3",
+                      }}
+                    >
+                      <div
                         style={{
-                          width: "100%",
-                          marginTop: 10,
-                          padding: "10px 12px",
-                          borderRadius: 10,
-                          border:
-                            "1px solid #dbe5ea",
-                          background: "#ffffff",
-                          color: "#2a7fa8",
+                          marginBottom: 7,
                           fontSize: 10,
                           fontWeight: 700,
-                          cursor: documentLoading
-                            ? "wait"
-                            : "pointer",
+                          color: "#52606c",
                         }}
                       >
-                        {documentLoading
-                          ? "กำลังเปิด..."
-                          : "📄 ดูใบยืนยันการสั่งซื้อ"}
-                      </button>
-                    )}
+                        เอกสารของฉัน
+                      </div>
+
+                      {medication.prescription_document_url && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openPrescriptionDocument(
+                              medication.id
+                            )
+                          }
+                          disabled={documentLoading}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border:
+                              "1px solid #dbe5ea",
+                            background: "#ffffff",
+                            color: "#238a72",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            cursor: documentLoading
+                              ? "wait"
+                              : "pointer",
+                          }}
+                        >
+                          {documentLoading
+                            ? "กำลังเปิด..."
+                            : "🩺 ดูใบสั่งยาจากแพทย์"}
+                        </button>
+                      )}
+
+                      {[
+                        "ordered",
+                        "ready",
+                        "picked_up",
+                      ].includes(order.status) &&
+                        order.order_document_url && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openOrderDocument(
+                                order.id
+                              )
+                            }
+                            disabled={
+                              documentLoading
+                            }
+                            style={{
+                              width: "100%",
+                              marginTop:
+                                medication.prescription_document_url
+                                  ? 7
+                                  : 0,
+                              padding:
+                                "10px 12px",
+                              borderRadius: 10,
+                              border:
+                                "1px solid #dbe5ea",
+                              background:
+                                "#ffffff",
+                              color: "#2a7fa8",
+                              fontSize: 10,
+                              fontWeight: 700,
+                              cursor:
+                                documentLoading
+                                  ? "wait"
+                                  : "pointer",
+                            }}
+                          >
+                            {documentLoading
+                              ? "กำลังเปิด..."
+                              : "📄 ดูใบยืนยันการสั่งซื้อ"}
+                          </button>
+                        )}
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -1133,7 +1271,7 @@ function ActiveCalendar({
                     color: "#233746",
                   }}
                 >
-                  ใบยืนยันการสั่งซื้อ
+                  {documentTitle}
                 </strong>
 
                 <span
@@ -1144,7 +1282,7 @@ function ActiveCalendar({
                     color: "#8b98a4",
                   }}
                 >
-                  เอกสารที่เภสัชกรแนบ
+                  {documentSubtitle}
                 </span>
               </div>
 
@@ -1171,7 +1309,7 @@ function ActiveCalendar({
 
             <img
               src={documentUrl}
-              alt="ใบยืนยันการสั่งซื้อ"
+              alt={documentTitle}
               style={{
                 display: "block",
                 width: "100%",

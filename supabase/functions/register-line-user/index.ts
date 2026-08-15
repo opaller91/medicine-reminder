@@ -181,6 +181,7 @@ Deno.serve(async (req) => {
             dosage_instruction,
             start_date,
             days_supply,
+            prescription_document_url,
             created_at,
 
             medication_orders (
@@ -251,6 +252,136 @@ Deno.serve(async (req) => {
           medications:
             normalizedMedications,
         },
+      });
+    }
+
+    // ==============================
+    // ACTION : GET PRESCRIPTION DOCUMENT
+    // ==============================
+
+    if (
+      action ===
+      "get_prescription_document"
+    ) {
+      const {
+        medication_id,
+      } = requestBody;
+
+      if (!medication_id) {
+        return json(
+          {
+            error:
+              "Missing medication_id",
+          },
+          400
+        );
+      }
+
+      const {
+        data: lineUser,
+        error: lineUserError,
+      } = await supabase
+        .from("line_users")
+        .select(`
+          id,
+          customer_id,
+          status
+        `)
+        .eq(
+          "line_user_id",
+          lineUserId
+        )
+        .maybeSingle();
+
+      if (lineUserError) {
+        throw lineUserError;
+      }
+
+      if (
+        !lineUser ||
+        !lineUser.customer_id ||
+        lineUser.status !== "active"
+      ) {
+        return json(
+          {
+            error:
+              "ยังไม่ได้เชื่อมข้อมูลลูกค้า",
+          },
+          403
+        );
+      }
+
+      const {
+        data: medication,
+        error: medicationError,
+      } = await supabase
+        .from("medications")
+        .select(`
+          id,
+          customer_id,
+          drug_name,
+          prescription_document_url
+        `)
+        .eq(
+          "id",
+          medication_id
+        )
+        .eq(
+          "customer_id",
+          lineUser.customer_id
+        )
+        .maybeSingle();
+
+      if (medicationError) {
+        throw medicationError;
+      }
+
+      if (!medication) {
+        return json(
+          {
+            error:
+              "ไม่พบข้อมูลยานี้",
+          },
+          404
+        );
+      }
+
+      if (
+        !medication
+          .prescription_document_url
+      ) {
+        return json(
+          {
+            error:
+              "ยารายการนี้ไม่มีใบสั่งยาจากแพทย์",
+          },
+          404
+        );
+      }
+
+      const {
+        data: signedData,
+        error: signedError,
+      } = await supabase.storage
+        .from("prescriptions")
+        .createSignedUrl(
+          medication
+            .prescription_document_url,
+          60 * 10
+        );
+
+      if (signedError) {
+        throw signedError;
+      }
+
+      return json({
+        success: true,
+        medication_id:
+          medication.id,
+        drug_name:
+          medication.drug_name,
+        document_url:
+          signedData.signedUrl,
       });
     }
 
