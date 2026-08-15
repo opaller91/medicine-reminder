@@ -117,3 +117,48 @@ export async function confirmOrder(
 
   return result;
 }
+
+// ==============================
+// GET ORDER DOCUMENT
+// ==============================
+
+export async function getOrderDocument(
+  idToken,
+  orderId
+) {
+  const response = await fetch(
+    FUNCTION_URL,
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        action:
+          "get_order_document",
+        idToken,
+        order_id: orderId,
+      }),
+    }
+  );
+
+  const result =
+    await response.json();
+
+  console.log(
+    "ORDER DOCUMENT RESULT:",
+    result
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      result.error ||
+        "ไม่สามารถโหลดใบยืนยันการสั่งซื้อได้"
+    );
+  }
+
+  return result;
+}

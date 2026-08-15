@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
               ordered_at,
               ready_at,
               picked_up_at,
+              order_document_url,
               created_at
             )
           )
@@ -253,6 +254,108 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ==============================
+    // ACTION : GET ORDER DOCUMENT
+    // ==============================
+
+    if (action === "get_order_document") {
+      const { order_id } = requestBody;
+
+      if (!order_id) {
+        return json(
+          { error: "Missing order_id" },
+          400
+        );
+      }
+
+      // หา LINE user ที่กำลังเปิด LIFF
+      const {
+        data: lineUser,
+        error: lineUserError,
+      } = await supabase
+        .from("line_users")
+        .select("id, customer_id, status")
+        .eq("line_user_id", lineUserId)
+        .maybeSingle();
+
+      if (lineUserError) {
+        throw lineUserError;
+      }
+
+      if (
+        !lineUser ||
+        !lineUser.customer_id ||
+        lineUser.status !== "active"
+      ) {
+        return json(
+          { error: "ยังไม่ได้เชื่อมข้อมูลลูกค้า" },
+          403
+        );
+      }
+
+      // สำคัญ: ตรวจว่า order เป็นของลูกค้าคนนี้จริง
+      const {
+        data: order,
+        error: orderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          customer_id,
+          status,
+          order_document_url
+        `)
+        .eq("id", order_id)
+        .eq(
+          "customer_id",
+          lineUser.customer_id
+        )
+        .maybeSingle();
+
+      if (orderError) {
+        throw orderError;
+      }
+
+      if (!order) {
+        return json(
+          { error: "ไม่พบรายการยานี้" },
+          404
+        );
+      }
+
+      if (!order.order_document_url) {
+        return json(
+          {
+            error:
+              "ยังไม่มีใบยืนยันการสั่งซื้อ",
+          },
+          404
+        );
+      }
+
+      // สร้าง URL ชั่วคราวจาก private bucket
+      const {
+        data: signedData,
+        error: signedError,
+      } = await supabase.storage
+        .from("order-documents")
+        .createSignedUrl(
+          order.order_document_url,
+          60 * 10
+        );
+
+      if (signedError) {
+        throw signedError;
+      }
+
+      return json({
+        success: true,
+        order_id: order.id,
+        document_url:
+          signedData.signedUrl,
+      });
+    }
+    
     // ==============================
     // ACTION : CONFIRM ORDER
     // ==============================
