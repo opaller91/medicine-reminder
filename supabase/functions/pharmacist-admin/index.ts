@@ -637,6 +637,7 @@ Deno.serve(async (req) => {
         .in("status", [
           "confirmed",
           "ordered",
+          "ready",
         ])
         .order("created_at", {
           ascending: true,
@@ -1463,6 +1464,107 @@ Deno.serve(async (req) => {
           lineNotificationSent,
         line_notification_error:
           lineNotificationError,
+      });
+    }
+    // ====================================
+    // ACTION 9 : MARK PICKED UP
+    // ready -> picked_up
+    // ====================================
+
+    if (body.action === "mark_picked_up") {
+      const { order_id } = body;
+
+      if (!order_id) {
+        return json(
+          {
+            error: "Missing order_id",
+          },
+          400
+        );
+      }
+
+      const {
+        data: existingOrder,
+        error: existingOrderError,
+      } = await supabase
+        .from("medication_orders")
+        .select(`
+          id,
+          status,
+          customer_id,
+          customers (
+            branch_name
+          )
+        `)
+        .eq("id", order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        throw existingOrderError;
+      }
+
+      if (!existingOrder) {
+        return json(
+          {
+            error: "ไม่พบรายการสั่งยานี้",
+          },
+          404
+        );
+      }
+
+      const relatedCustomer =
+        getRelatedCustomer(
+          existingOrder.customers
+        ) as {
+          branch_name?: string | null;
+        } | null;
+
+      if (
+        pharmacist.branch_name &&
+        relatedCustomer?.branch_name !==
+          pharmacist.branch_name
+      ) {
+        return json(
+          {
+            error:
+              "คุณไม่มีสิทธิ์ดำเนินการรายการของสาขาอื่น",
+          },
+          403
+        );
+      }
+
+      if (existingOrder.status !== "ready") {
+        return json(
+          {
+            error:
+              "รายการนี้ไม่ได้อยู่ในสถานะ ready",
+          },
+          409
+        );
+      }
+
+      const {
+        data: order,
+        error: updateError,
+      } = await supabase
+        .from("medication_orders")
+        .update({
+          status: "picked_up",
+          picked_up_at:
+            new Date().toISOString(),
+        })
+        .eq("id", order_id)
+        .eq("status", "ready")
+        .select()
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return json({
+        success: true,
+        order,
       });
     }
 

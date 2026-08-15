@@ -9,6 +9,7 @@ import {
   uploadOrderDocument,
   getOrderDocumentUrl,
   markReady,
+  markPickedUp,
 } from "./adminApi";
 
 function AdminDashboard() {
@@ -296,6 +297,10 @@ function ConfirmedOrderList({
     (order) => order.status === "ordered"
   ).length;
 
+  const readyCount = orders.filter(
+    (order) => order.status === "ready"
+  ).length;
+
   return (
     <>
       <div style={styles.summary}>
@@ -303,26 +308,40 @@ function ConfirmedOrderList({
           {orders.length}
         </strong>
         <span>
-          งานรอดำเนินการ • รอสั่งยา {confirmedCount} • รอยาพร้อม {orderedCount}
+          งานรอดำเนินการ • รอสั่งยา {confirmedCount} • รอยาพร้อม {orderedCount} • รอลูกค้ารับ {readyCount}
         </span>
       </div>
 
       <div style={styles.list}>
-        {orders.map((order) =>
-          order.status === "ordered" ? (
-            <ReadyOrderCard
-              key={order.id}
-              order={order}
-              onSaved={onRefresh}
-            />
-          ) : (
+        {orders.map((order) => {
+          if (order.status === "ready") {
+            return (
+              <PickupOrderCard
+                key={order.id}
+                order={order}
+                onSaved={onRefresh}
+              />
+            );
+          }
+
+          if (order.status === "ordered") {
+            return (
+              <ReadyOrderCard
+                key={order.id}
+                order={order}
+                onSaved={onRefresh}
+              />
+            );
+          }
+
+          return (
             <ConfirmedOrderCard
               key={order.id}
               order={order}
               onSaved={onRefresh}
             />
-          )
-        )}
+          );
+        })}
       </div>
     </>
   );
@@ -434,6 +453,191 @@ function ReadyOrderCard({
         }}
       >
         {saving ? "กำลังบันทึก..." : "✓ ยาพร้อมรับ"}
+      </button>
+    </div>
+  );
+}
+
+
+function PickupOrderCard({
+  order,
+  onSaved,
+}) {
+  const customer =
+    getRelatedItem(order.customers);
+
+  const medication =
+    getRelatedItem(order.medications);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  async function submitPickedUp() {
+    const confirmed =
+      window.confirm(
+        "ยืนยันว่าลูกค้ารับยารายการนี้เรียบร้อยแล้วใช่หรือไม่?"
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await markPickedUp(
+        order.id
+      );
+
+      alert(
+        "บันทึกว่าลูกค้ารับยาเรียบร้อยแล้ว"
+      );
+
+      await onSaved();
+    } catch (err) {
+      console.error(
+        "MARK PICKED UP ERROR:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "ไม่สามารถบันทึกการรับยาได้"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={styles.orderTaskCard}>
+      <div
+        style={styles.orderTaskHeader}
+      >
+        <div
+          style={{
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <small style={styles.muted}>
+            ยาพร้อมให้ลูกค้ารับ
+          </small>
+
+          <h3
+            style={
+              styles.orderTaskTitle
+            }
+          >
+            {customer?.full_name ||
+              "ไม่พบชื่อลูกค้า"}
+          </h3>
+
+          <div style={styles.muted}>
+            {customer?.phone || "-"}
+          </div>
+        </div>
+
+        <span
+          style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            background: "#e8f7f4",
+            color: "#238a72",
+            fontSize: 10,
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+          }}
+        >
+          พร้อมรับ
+        </span>
+      </div>
+
+      <div style={styles.orderDrugBox}>
+        <strong>
+          {medication?.drug_name ||
+            "ไม่พบชื่อยา"}
+
+          {medication?.strength
+            ? ` ${medication.strength}`
+            : ""}
+        </strong>
+
+        <span>
+          จำนวน{" "}
+          {medication?.quantity ?? "-"}
+        </span>
+
+        <span>
+          วิธีใช้{" "}
+          {medication
+            ?.dosage_instruction ||
+            "-"}
+        </span>
+      </div>
+
+      <div
+        style={styles.orderTaskDates}
+      >
+        <div>
+          <span
+            style={styles.orderLabel}
+          >
+            ยาพร้อมเมื่อ
+          </span>
+
+          <strong>
+            {formatThaiDateTime(
+              order.ready_at
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span
+            style={styles.orderLabel}
+          >
+            นัดรับยา
+          </span>
+
+          <strong>
+            {formatThaiDate(
+              order.pickup_date
+            )}
+          </strong>
+        </div>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            ...styles.error,
+            marginTop: 12,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={saving}
+        onClick={submitPickedUp}
+        style={{
+          ...styles.readyButton,
+          ...(saving
+            ? styles.disabledButton
+            : {}),
+          background: "#238a72",
+        }}
+      >
+        {saving
+          ? "กำลังบันทึก..."
+          : "✓ ลูกค้ารับยาแล้ว"}
       </button>
     </div>
   );

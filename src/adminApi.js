@@ -259,6 +259,26 @@ export async function markReady(
 }
 
 // ==============================
+// เปลี่ยนสถานะ ready -> picked_up
+// ลูกค้ามารับยาเรียบร้อยแล้ว
+// ==============================
+
+export async function markPickedUp(
+  order_id
+) {
+  if (!order_id) {
+    throw new Error(
+      "ไม่พบ order_id"
+    );
+  }
+
+  return callAdminApi({
+    action: "mark_picked_up",
+    order_id,
+  });
+}
+
+// ==============================
 // FILE → BASE64
 // ใช้ร่วมกันทั้ง
 // - ใบสั่งแพทย์
