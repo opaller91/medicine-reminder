@@ -4,6 +4,7 @@ import {
   registerLineUser,
   getCalendar,
   confirmOrder,
+  getOrderDocument,
 } from "./api";
 
 import AdminLogin from "./AdminLogin";
@@ -299,6 +300,51 @@ function ActiveCalendar({
   idToken,
   onRefresh,
 }) {
+  const [documentUrl, setDocumentUrl] =
+    useState(null);
+
+  const [documentLoading, setDocumentLoading] =
+    useState(false);
+
+  const [documentError, setDocumentError] =
+    useState("");
+
+  async function openOrderDocument(orderId) {
+    if (!idToken) {
+      setDocumentError(
+        "ไม่พบข้อมูล LINE กรุณาเปิดใหม่ผ่าน LINE"
+      );
+      return;
+    }
+
+    try {
+      setDocumentLoading(true);
+      setDocumentError("");
+
+      const result =
+        await getOrderDocument(
+          idToken,
+          orderId
+        );
+
+      setDocumentUrl(
+        result.document_url
+      );
+    } catch (err) {
+      console.error(
+        "GET ORDER DOCUMENT ERROR:",
+        err
+      );
+
+      setDocumentError(
+        err?.message ||
+          "ไม่สามารถเปิดใบยืนยันการสั่งซื้อได้"
+      );
+    } finally {
+      setDocumentLoading(false);
+    }
+  }
+
   const medications =
     (customer?.medications || []).filter(
       (medication) => medication?.latest_order
@@ -995,11 +1041,160 @@ function ActiveCalendar({
                         : "ถึงรอบรับยา"}
                     </span>
                   </div>
+
+                  {[
+                    "ordered",
+                    "ready",
+                    "picked_up",
+                  ].includes(order.status) &&
+                    order.order_document_url && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openOrderDocument(order.id)
+                        }
+                        disabled={documentLoading}
+                        style={{
+                          width: "100%",
+                          marginTop: 10,
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border:
+                            "1px solid #dbe5ea",
+                          background: "#ffffff",
+                          color: "#2a7fa8",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          cursor: documentLoading
+                            ? "wait"
+                            : "pointer",
+                        }}
+                      >
+                        {documentLoading
+                          ? "กำลังเปิด..."
+                          : "📄 ดูใบยืนยันการสั่งซื้อ"}
+                      </button>
+                    )}
                 </div>
               </div>
             </section>
           );
         }
+      )}
+
+      {documentUrl && (
+        <div
+          onClick={() =>
+            setDocumentUrl(null)
+          }
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              "rgba(19, 35, 48, 0.58)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+            style={{
+              width: "100%",
+              maxWidth: 430,
+              maxHeight: "88vh",
+              overflow: "auto",
+              background: "#ffffff",
+              borderRadius: 18,
+              padding: 14,
+              boxShadow:
+                "0 18px 50px rgba(0,0,0,0.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <strong
+                  style={{
+                    display: "block",
+                    fontSize: 14,
+                    color: "#233746",
+                  }}
+                >
+                  ใบยืนยันการสั่งซื้อ
+                </strong>
+
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 2,
+                    fontSize: 10,
+                    color: "#8b98a4",
+                  }}
+                >
+                  เอกสารที่เภสัชกรแนบ
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setDocumentUrl(null)
+                }
+                aria-label="ปิด"
+                style={{
+                  width: 34,
+                  height: 34,
+                  border: 0,
+                  borderRadius: 10,
+                  background: "#f2f6f8",
+                  color: "#667681",
+                  fontSize: 18,
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <img
+              src={documentUrl}
+              alt="ใบยืนยันการสั่งซื้อ"
+              style={{
+                display: "block",
+                width: "100%",
+                maxHeight: "72vh",
+                objectFit: "contain",
+                borderRadius: 12,
+                background: "#f7fafb",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {documentError && (
+        <div
+          className="error"
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+          }}
+        >
+          {documentError}
+        </div>
       )}
     </>
   );
