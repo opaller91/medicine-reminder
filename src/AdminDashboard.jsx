@@ -1189,6 +1189,7 @@ function AddMedicationForm({
     start_date: "",
     days_supply: 30,
     pickup_date: "",
+    prescription_file: null,
   });
 
   const [saving, setSaving] =
@@ -1196,6 +1197,57 @@ function AddMedicationForm({
 
   const [error, setError] =
     useState("");
+
+  const [prescriptionFile, setPrescriptionFile] =
+    useState(null);
+
+  const [prescriptionPreviewUrl, setPrescriptionPreviewUrl] =
+    useState("");
+
+  function selectPrescriptionFile(e) {
+    const selected = e.target.files?.[0] || null;
+
+    if (!selected) {
+      setPrescriptionFile(null);
+
+      if (prescriptionPreviewUrl) {
+        URL.revokeObjectURL(
+          prescriptionPreviewUrl
+        );
+      }
+
+      setPrescriptionPreviewUrl("");
+      return;
+    }
+
+    if (!selected.type.startsWith("image/")) {
+      setError(
+        "ใบสั่งยาจากแพทย์รองรับไฟล์รูปภาพเท่านั้น"
+      );
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+
+    if (selected.size > maxSize) {
+      setError(
+        "ไฟล์ใบสั่งยาต้องมีขนาดไม่เกิน 10 MB"
+      );
+      return;
+    }
+
+    if (prescriptionPreviewUrl) {
+      URL.revokeObjectURL(
+        prescriptionPreviewUrl
+      );
+    }
+
+    setError("");
+    setPrescriptionFile(selected);
+    setPrescriptionPreviewUrl(
+      URL.createObjectURL(selected)
+    );
+  }
 
   function updateField(e) {
     setForm((current) => ({
@@ -1331,6 +1383,8 @@ function AddMedicationForm({
           ),
         pickup_date:
           form.pickup_date,
+        prescription_file:
+          prescriptionFile,
       });
 
       alert(
@@ -1421,6 +1475,56 @@ function AddMedicationForm({
             onChange={updateField}
             placeholder="เช่น 1 เม็ด หลังอาหารเช้า"
           />
+
+          <SectionTitle>
+            ใบสั่งยาจากแพทย์
+          </SectionTitle>
+
+          <div style={styles.documentArea}>
+            <div style={styles.documentHeading}>
+              <div>
+                <strong>
+                  ใบสั่งยาจากแพทย์
+                </strong>
+
+                <div style={styles.muted}>
+                  ไม่บังคับ • แนบเฉพาะกรณีที่มีเอกสาร
+                </div>
+              </div>
+
+              <label style={styles.uploadButton}>
+                {prescriptionFile
+                  ? "เปลี่ยนรูป"
+                  : "แนบรูป"}
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={selectPrescriptionFile}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
+
+            {prescriptionPreviewUrl ? (
+              <div style={styles.previewWrap}>
+                <img
+                  src={prescriptionPreviewUrl}
+                  alt="ตัวอย่างใบสั่งยาจากแพทย์"
+                  style={styles.previewImage}
+                />
+
+                <div style={styles.previewName}>
+                  {prescriptionFile?.name}
+                </div>
+              </div>
+            ) : (
+              <div style={styles.noDocument}>
+                ไม่มีใบสั่งแพทย์ก็สามารถบันทึกยาได้
+              </div>
+            )}
+          </div>
 
           <SectionTitle>
             รอบการใช้ยา
@@ -1570,6 +1674,55 @@ function CustomerLinkForm({
               }
             : medication
       ),
+    }));
+  }
+
+  function updateMedicationPrescription(
+    index,
+    e
+  ) {
+    const selected =
+      e.target.files?.[0] || null;
+
+    if (
+      selected &&
+      !selected.type.startsWith("image/")
+    ) {
+      setError(
+        "ใบสั่งยาจากแพทย์รองรับไฟล์รูปภาพเท่านั้น"
+      );
+      return;
+    }
+
+    if (
+      selected &&
+      selected.size >
+        10 * 1024 * 1024
+    ) {
+      setError(
+        "ไฟล์ใบสั่งยาต้องมีขนาดไม่เกิน 10 MB"
+      );
+      return;
+    }
+
+    setError("");
+
+    setForm((current) => ({
+      ...current,
+      medications:
+        current.medications.map(
+          (
+            medication,
+            medicationIndex
+          ) =>
+            medicationIndex === index
+              ? {
+                  ...medication,
+                  prescription_file:
+                    selected,
+                }
+              : medication
+        ),
     }));
   }
 
@@ -1865,6 +2018,51 @@ function CustomerLinkForm({
                     }
                     placeholder="เช่น 1 เม็ด หลังอาหารเช้า"
                   />
+
+                  <div style={styles.documentArea}>
+                    <div style={styles.documentHeading}>
+                      <div>
+                        <strong>
+                          ใบสั่งยาจากแพทย์
+                        </strong>
+
+                        <div style={styles.muted}>
+                          ไม่บังคับ
+                        </div>
+                      </div>
+
+                      <label style={styles.uploadButton}>
+                        {medication.prescription_file
+                          ? "เปลี่ยนรูป"
+                          : "แนบรูป"}
+
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) =>
+                            updateMedicationPrescription(
+                              index,
+                              e
+                            )
+                          }
+                          style={{
+                            display: "none",
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {medication.prescription_file ? (
+                      <div style={styles.noDocument}>
+                        ✓ {medication.prescription_file.name}
+                      </div>
+                    ) : (
+                      <div style={styles.noDocument}>
+                        ไม่มีใบสั่งแพทย์ก็สามารถบันทึกยาได้
+                      </div>
+                    )}
+                  </div>
 
                   <Field
                     label="วันที่เริ่มใช้ยา"

@@ -225,6 +225,43 @@ Deno.serve(async (req) => {
           throw medicationError;
         }
 
+        // OPTIONAL : ใบสั่งยาจากแพทย์
+        if (item.prescription_file_base64) {
+          const prescriptionPath =
+            await uploadPrescriptionDocument({
+              supabase,
+              customerId: customer.id,
+              medicationId: medication.id,
+              fileBase64:
+                item.prescription_file_base64,
+              fileName:
+                item.prescription_file_name,
+              contentType:
+                item.prescription_content_type,
+            });
+
+          const {
+            error: prescriptionUpdateError,
+          } = await supabase
+            .from("medications")
+            .update({
+              prescription_document_url:
+                prescriptionPath,
+            })
+            .eq("id", medication.id);
+
+          if (prescriptionUpdateError) {
+            await supabase.storage
+              .from("prescriptions")
+              .remove([prescriptionPath]);
+
+            throw prescriptionUpdateError;
+          }
+
+          medication.prescription_document_url =
+            prescriptionPath;
+        }
+
         const expectedRunoutDate =
           addDaysToDateString(
             item.start_date,
@@ -314,6 +351,9 @@ Deno.serve(async (req) => {
         start_date,
         days_supply,
         pickup_date,
+        prescription_file_base64,
+        prescription_file_name,
+        prescription_content_type,
       } = body;
 
       if (
@@ -386,6 +426,43 @@ Deno.serve(async (req) => {
 
       if (medicationError) {
         throw medicationError;
+      }
+
+      // OPTIONAL : ใบสั่งยาจากแพทย์
+      if (prescription_file_base64) {
+        const prescriptionPath =
+          await uploadPrescriptionDocument({
+            supabase,
+            customerId: customer.id,
+            medicationId: medication.id,
+            fileBase64:
+              prescription_file_base64,
+            fileName:
+              prescription_file_name,
+            contentType:
+              prescription_content_type,
+          });
+
+        const {
+          error: prescriptionUpdateError,
+        } = await supabase
+          .from("medications")
+          .update({
+            prescription_document_url:
+              prescriptionPath,
+          })
+          .eq("id", medication.id);
+
+        if (prescriptionUpdateError) {
+          await supabase.storage
+            .from("prescriptions")
+            .remove([prescriptionPath]);
+
+          throw prescriptionUpdateError;
+        }
+
+        medication.prescription_document_url =
+          prescriptionPath;
       }
 
       const expectedRunoutDate =
@@ -461,6 +538,7 @@ Deno.serve(async (req) => {
             quantity,
             dosage_instruction,
             days_supply,
+            prescription_document_url,
 
             medication_orders (
               id,
@@ -552,7 +630,8 @@ Deno.serve(async (req) => {
             quantity,
             dosage_instruction,
             start_date,
-            days_supply
+            days_supply,
+            prescription_document_url
           )
         `)
         .in("status", [
@@ -1667,6 +1746,84 @@ function formatThaiDate(
     )
   );
 }
+
+async function uploadPrescriptionDocument({
+  supabase,
+  customerId,
+  medicationId,
+  fileBase64,
+  fileName,
+  contentType,
+}: {
+  supabase: any;
+  customerId: string;
+  medicationId: string;
+  fileBase64: string;
+  fileName?: string | null;
+  contentType?: string | null;
+}) {
+  const normalizedBase64 =
+    String(fileBase64).includes(",")
+      ? String(fileBase64)
+          .split(",")
+          .pop()!
+      : String(fileBase64);
+
+  let fileBytes: Uint8Array;
+
+  try {
+    fileBytes =
+      decodeBase64ToUint8Array(
+        normalizedBase64
+      );
+  } catch {
+    throw new Error(
+      "ไม่สามารถอ่านไฟล์ใบสั่งแพทย์ได้"
+    );
+  }
+
+  if (
+    fileBytes.byteLength >
+    10 * 1024 * 1024
+  ) {
+    throw new Error(
+      "ไฟล์ใบสั่งแพทย์ต้องมีขนาดไม่เกิน 10 MB"
+    );
+  }
+
+  const safeExtension =
+    getSafeExtension(
+      fileName || "prescription.jpg",
+      contentType || "image/jpeg"
+    );
+
+  const storagePath =
+    `${customerId}/${medicationId}/` +
+    `${Date.now()}.${safeExtension}`;
+
+  const {
+    error: uploadError,
+  } = await supabase.storage
+    .from("prescriptions")
+    .upload(
+      storagePath,
+      fileBytes,
+      {
+        contentType:
+          contentType ||
+          "image/jpeg",
+        cacheControl: "3600",
+        upsert: false,
+      }
+    );
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  return storagePath;
+}
+
 
 function json(
   data: unknown,

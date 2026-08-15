@@ -50,12 +50,62 @@ export async function getPendingLineUsers() {
 
 // ==============================
 // เชื่อมลูกค้าครั้งแรก
+// รองรับใบสั่งยาจากแพทย์ Optional
 // ==============================
 
 export async function linkCustomer(payload) {
+  const medications =
+    await Promise.all(
+      (payload.medications || []).map(
+        async (medication) => {
+          const {
+            prescription_file,
+            ...plainMedication
+          } = medication;
+
+          // ไม่มีใบสั่งแพทย์
+          if (!prescription_file) {
+            return {
+              ...plainMedication,
+
+              prescription_file_base64:
+                null,
+
+              prescription_file_name:
+                null,
+
+              prescription_content_type:
+                null,
+            };
+          }
+
+          // มีใบสั่งแพทย์
+          const prescription_file_base64 =
+            await fileToBase64(
+              prescription_file
+            );
+
+          return {
+            ...plainMedication,
+
+            prescription_file_base64,
+
+            prescription_file_name:
+              prescription_file.name ||
+              "prescription.jpg",
+
+            prescription_content_type:
+              prescription_file.type ||
+              "image/jpeg",
+          };
+        }
+      )
+    );
+
   return callAdminApi({
     action: "link_customer",
     ...payload,
+    medications,
   });
 }
 
@@ -71,12 +121,48 @@ export async function getAllCustomers() {
 
 // ==============================
 // เพิ่มยาให้ลูกค้าที่เชื่อมแล้ว
+// รองรับใบสั่งยาจากแพทย์ Optional
 // ==============================
 
 export async function addMedication(payload) {
+  const {
+    prescription_file,
+    ...plainPayload
+  } = payload;
+
+  let prescriptionPayload = {
+    prescription_file_base64:
+      null,
+
+    prescription_file_name:
+      null,
+
+    prescription_content_type:
+      null,
+  };
+
+  // ถ้ามีใบสั่งแพทย์
+  if (prescription_file) {
+    prescriptionPayload = {
+      prescription_file_base64:
+        await fileToBase64(
+          prescription_file
+        ),
+
+      prescription_file_name:
+        prescription_file.name ||
+        "prescription.jpg",
+
+      prescription_content_type:
+        prescription_file.type ||
+        "image/jpeg",
+    };
+  }
+
   return callAdminApi({
     action: "add_medication",
-    ...payload,
+    ...plainPayload,
+    ...prescriptionPayload,
   });
 }
 
@@ -91,7 +177,7 @@ export async function getConfirmedOrders() {
 }
 
 // ==============================
-// อัปโหลดใบยืนยันสั่งซื้อผ่าน Edge Function
+// อัปโหลดใบยืนยันสั่งซื้อ
 // ==============================
 
 export async function uploadOrderDocument({
@@ -148,13 +234,13 @@ export async function getOrderDocumentUrl(
   return callAdminApi({
     action:
       "get_order_document_url",
+
     order_id,
   });
 }
 
 // ==============================
-// เปลี่ยนสถานะ ordered -> ready
-// และให้ Edge Function ส่ง LINE แจ้งลูกค้า
+// เปลี่ยน ordered → ready
 // ==============================
 
 export async function markReady(
@@ -174,6 +260,9 @@ export async function markReady(
 
 // ==============================
 // FILE → BASE64
+// ใช้ร่วมกันทั้ง
+// - ใบสั่งแพทย์
+// - ใบยืนยันการสั่งซื้อ
 // ==============================
 
 function fileToBase64(file) {
