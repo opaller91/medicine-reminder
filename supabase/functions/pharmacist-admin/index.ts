@@ -550,6 +550,8 @@ Deno.serve(async (req) => {
               ordered_at,
               ready_at,
               picked_up_at,
+              actual_price,
+              receipt_document_url,
               order_document_url,
               created_at
             )
@@ -1469,15 +1471,51 @@ Deno.serve(async (req) => {
     // ====================================
     // ACTION 9 : MARK PICKED UP
     // ready -> picked_up
+    // ต้องมีราคาขายจริง + ใบเสร็จ
     // ====================================
 
     if (body.action === "mark_picked_up") {
-      const { order_id } = body;
+      const {
+        order_id,
+        actual_price,
+        receipt_file_base64,
+        receipt_file_name,
+        receipt_content_type,
+      } = body;
 
       if (!order_id) {
         return json(
           {
             error: "Missing order_id",
+          },
+          400
+        );
+      }
+
+      const parsedPrice =
+        Number(actual_price);
+
+      if (
+        actual_price === undefined ||
+        actual_price === null ||
+        actual_price === "" ||
+        !Number.isFinite(parsedPrice) ||
+        parsedPrice < 0
+      ) {
+        return json(
+          {
+            error:
+              "กรุณากรอกราคาขายจริงให้ถูกต้อง",
+          },
+          400
+        );
+      }
+
+      if (!receipt_file_base64) {
+        return json(
+          {
+            error:
+              "กรุณาแนบรูปใบเสร็จ",
           },
           400
         );
@@ -1492,6 +1530,7 @@ Deno.serve(async (req) => {
           id,
           status,
           customer_id,
+          medication_id,
           customers (
             branch_name
           )
@@ -1506,7 +1545,8 @@ Deno.serve(async (req) => {
       if (!existingOrder) {
         return json(
           {
-            error: "ไม่พบรายการสั่งยานี้",
+            error:
+              "ไม่พบรายการสั่งยานี้",
           },
           404
         );
@@ -1533,14 +1573,88 @@ Deno.serve(async (req) => {
         );
       }
 
-      if (existingOrder.status !== "ready") {
+      if (
+        existingOrder.status !== "ready"
+      ) {
         return json(
           {
             error:
-              "รายการนี้ไม่ได้อยู่ในสถานะ ready",
+              "รายการนี้ไม่ได้อยู่ในสถานะยาพร้อมรับ",
+            status:
+              existingOrder.status,
           },
           409
         );
+      }
+
+      const normalizedBase64 =
+        String(receipt_file_base64)
+          .replace(
+            /^data:.*?;base64,/,
+            ""
+          );
+
+      let fileBytes: Uint8Array;
+
+      try {
+        fileBytes =
+          decodeBase64ToUint8Array(
+            normalizedBase64
+          );
+      } catch {
+        return json(
+          {
+            error:
+              "ไฟล์ใบเสร็จไม่ถูกต้อง",
+          },
+          400
+        );
+      }
+
+      if (
+        fileBytes.byteLength >
+        10 * 1024 * 1024
+      ) {
+        return json(
+          {
+            error:
+              "ไฟล์ใบเสร็จต้องมีขนาดไม่เกิน 10 MB",
+          },
+          400
+        );
+      }
+
+      const safeExtension =
+        getSafeExtension(
+          receipt_file_name ||
+            "receipt.jpg",
+          receipt_content_type ||
+            "image/jpeg"
+        );
+
+      const storagePath =
+        `${existingOrder.customer_id}/` +
+        `${order_id}/` +
+        `receipt-${Date.now()}.${safeExtension}`;
+
+      const {
+        error: uploadError,
+      } = await supabase.storage
+        .from("receipts")
+        .upload(
+          storagePath,
+          fileBytes,
+          {
+            contentType:
+              receipt_content_type ||
+              "image/jpeg",
+            cacheControl: "3600",
+            upsert: false,
+          }
+        );
+
+      if (uploadError) {
+        throw uploadError;
       }
 
       const {
@@ -1552,18 +1666,42 @@ Deno.serve(async (req) => {
           status: "picked_up",
           picked_up_at:
             new Date().toISOString(),
+          actual_price:
+            parsedPrice,
+          receipt_document_url:
+            storagePath,
         })
         .eq("id", order_id)
         .eq("status", "ready")
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateError) {
+        await supabase.storage
+          .from("receipts")
+          .remove([storagePath]);
+
         throw updateError;
+      }
+
+      if (!order) {
+        await supabase.storage
+          .from("receipts")
+          .remove([storagePath]);
+
+        return json(
+          {
+            error:
+              "สถานะรายการมีการเปลี่ยนแปลง กรุณาโหลดใหม่อีกครั้ง",
+          },
+          409
+        );
       }
 
       return json({
         success: true,
+        message:
+          "บันทึกการรับยาเรียบร้อย",
         order,
       });
     }

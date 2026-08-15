@@ -469,16 +469,105 @@ function PickupOrderCard({
   const medication =
     getRelatedItem(order.medications);
 
+  const [actualPrice, setActualPrice] =
+    useState("");
+
+  const [receiptFile, setReceiptFile] =
+    useState(null);
+
+  const [
+    receiptPreviewUrl,
+    setReceiptPreviewUrl,
+  ] = useState("");
+
   const [saving, setSaving] =
     useState(false);
 
   const [error, setError] =
     useState("");
 
+  function selectReceiptFile(e) {
+    const selected =
+      e.target.files?.[0] || null;
+
+    if (!selected) {
+      setReceiptFile(null);
+
+      if (receiptPreviewUrl) {
+        URL.revokeObjectURL(
+          receiptPreviewUrl
+        );
+      }
+
+      setReceiptPreviewUrl("");
+      return;
+    }
+
+    if (
+      !selected.type.startsWith(
+        "image/"
+      )
+    ) {
+      setError(
+        "ใบเสร็จรองรับไฟล์รูปภาพเท่านั้น"
+      );
+      return;
+    }
+
+    const maxSize =
+      10 * 1024 * 1024;
+
+    if (selected.size > maxSize) {
+      setError(
+        "ไฟล์ใบเสร็จต้องมีขนาดไม่เกิน 10 MB"
+      );
+      return;
+    }
+
+    if (receiptPreviewUrl) {
+      URL.revokeObjectURL(
+        receiptPreviewUrl
+      );
+    }
+
+    setError("");
+    setReceiptFile(selected);
+    setReceiptPreviewUrl(
+      URL.createObjectURL(selected)
+    );
+  }
+
   async function submitPickedUp() {
+    const price =
+      Number(actualPrice);
+
+    if (
+      actualPrice === "" ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      setError(
+        "กรุณากรอกราคาขายจริงให้ถูกต้อง"
+      );
+      return;
+    }
+
+    if (!receiptFile) {
+      setError(
+        "กรุณาแนบรูปใบเสร็จ"
+      );
+      return;
+    }
+
     const confirmed =
       window.confirm(
-        "ยืนยันว่าลูกค้ารับยารายการนี้เรียบร้อยแล้วใช่หรือไม่?"
+        `ยืนยันว่าลูกค้ารับยาเรียบร้อยแล้ว\nยอดขายจริง ${price.toLocaleString(
+          "th-TH",
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }
+        )} บาท`
       );
 
     if (!confirmed) {
@@ -489,12 +578,25 @@ function PickupOrderCard({
       setSaving(true);
       setError("");
 
-      await markPickedUp(
-        order.id
-      );
+      await markPickedUp({
+        order_id: order.id,
+        actual_price: price,
+        receipt_file:
+          receiptFile,
+      });
+
+      if (receiptPreviewUrl) {
+        URL.revokeObjectURL(
+          receiptPreviewUrl
+        );
+      }
+
+      setReceiptFile(null);
+      setReceiptPreviewUrl("");
+      setActualPrice("");
 
       alert(
-        "บันทึกว่าลูกค้ารับยาเรียบร้อยแล้ว"
+        "บันทึกการรับยา ยอดขาย และใบเสร็จเรียบร้อย"
       );
 
       await onSaved();
@@ -512,6 +614,15 @@ function PickupOrderCard({
       setSaving(false);
     }
   }
+
+  const canSubmit =
+    actualPrice !== "" &&
+    Number.isFinite(
+      Number(actualPrice)
+    ) &&
+    Number(actualPrice) >= 0 &&
+    Boolean(receiptFile) &&
+    !saving;
 
   return (
     <div style={styles.orderTaskCard}>
@@ -612,6 +723,164 @@ function PickupOrderCard({
         </div>
       </div>
 
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          border:
+            "1px solid #dfeaec",
+          borderRadius: 14,
+          background: "#f8fcfc",
+        }}
+      >
+        <strong
+          style={{
+            display: "block",
+            marginBottom: 12,
+          }}
+        >
+          บันทึกการรับยา
+        </strong>
+
+        <label
+          style={{
+            display: "block",
+            marginBottom: 14,
+          }}
+        >
+          <span
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            ยอดขายจริง *
+          </span>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={actualPrice}
+              onChange={(e) =>
+                setActualPrice(
+                  e.target.value
+                )
+              }
+              placeholder="เช่น 350.00"
+              disabled={saving}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding:
+                  "11px 12px",
+                border:
+                  "1px solid #d7e1e4",
+                borderRadius: 10,
+                background:
+                  "#ffffff",
+                fontSize: 14,
+                outline: "none",
+                boxSizing:
+                  "border-box",
+              }}
+            />
+
+            <span
+              style={{
+                fontSize: 12,
+                color: "#52606c",
+                whiteSpace:
+                  "nowrap",
+              }}
+            >
+              บาท
+            </span>
+          </div>
+        </label>
+
+        <div style={styles.documentArea}>
+          <div
+            style={
+              styles.documentHeading
+            }
+          >
+            <div>
+              <strong>
+                ใบเสร็จ *
+              </strong>
+
+              <div
+                style={styles.muted}
+              >
+                ถ่ายรูปหรือเลือกภาพใบเสร็จ
+              </div>
+            </div>
+
+            <label
+              style={
+                styles.uploadButton
+              }
+            >
+              {receiptFile
+                ? "เปลี่ยนรูป"
+                : "แนบรูป"}
+
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={
+                  selectReceiptFile
+                }
+                disabled={saving}
+                style={{
+                  display: "none",
+                }}
+              />
+            </label>
+          </div>
+
+          {receiptPreviewUrl ? (
+            <div
+              style={styles.previewWrap}
+            >
+              <img
+                src={
+                  receiptPreviewUrl
+                }
+                alt="ตัวอย่างใบเสร็จ"
+                style={
+                  styles.previewImage
+                }
+              />
+
+              <div
+                style={styles.previewName}
+              >
+                {receiptFile?.name}
+              </div>
+            </div>
+          ) : (
+            <div
+              style={styles.noDocument}
+            >
+              ยังไม่ได้แนบใบเสร็จ
+            </div>
+          )}
+        </div>
+      </div>
+
       {error && (
         <div
           style={{
@@ -625,11 +894,11 @@ function PickupOrderCard({
 
       <button
         type="button"
-        disabled={saving}
+        disabled={!canSubmit}
         onClick={submitPickedUp}
         style={{
           ...styles.readyButton,
-          ...(saving
+          ...(!canSubmit
             ? styles.disabledButton
             : {}),
           background: "#238a72",
@@ -637,11 +906,12 @@ function PickupOrderCard({
       >
         {saving
           ? "กำลังบันทึก..."
-          : "✓ ลูกค้ารับยาแล้ว"}
+          : "✓ ยืนยันลูกค้ารับยาแล้ว"}
       </button>
     </div>
   );
 }
+
 
 function ConfirmedOrderCard({
   order,

@@ -259,22 +259,72 @@ export async function markReady(
 }
 
 // ==============================
-// เปลี่ยนสถานะ ready -> picked_up
-// ลูกค้ามารับยาเรียบร้อยแล้ว
+// ลูกค้ารับยาแล้ว
+// ready -> picked_up
+// ต้องมีราคาขายจริง + ใบเสร็จ
 // ==============================
 
-export async function markPickedUp(
-  order_id
-) {
+export async function markPickedUp({
+  order_id,
+  actual_price,
+  receipt_file,
+}) {
   if (!order_id) {
     throw new Error(
       "ไม่พบ order_id"
     );
   }
 
+  if (
+    actual_price === "" ||
+    actual_price === null ||
+    actual_price === undefined
+  ) {
+    throw new Error(
+      "กรุณากรอกราคาขายจริง"
+    );
+  }
+
+  const price =
+    Number(actual_price);
+
+  if (
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
+    throw new Error(
+      "กรุณากรอกราคาขายจริงให้ถูกต้อง"
+    );
+  }
+
+  if (!receipt_file) {
+    throw new Error(
+      "กรุณาแนบรูปใบเสร็จ"
+    );
+  }
+
+  const receipt_file_base64 =
+    await fileToBase64(
+      receipt_file
+    );
+
   return callAdminApi({
     action: "mark_picked_up",
+
     order_id,
+
+    actual_price:
+      price,
+
+    receipt_file_base64,
+
+    receipt_file_name:
+      receipt_file.name ||
+      "receipt.jpg",
+
+    receipt_content_type:
+      receipt_file.type ||
+      "image/jpeg",
   });
 }
 
