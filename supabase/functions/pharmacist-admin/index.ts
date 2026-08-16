@@ -1698,11 +1698,179 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ====================================
+      // แจ้งลูกค้าทาง LINE หลังรับยาเรียบร้อย
+      // ====================================
+
+      let lineNotificationSent = false;
+      let lineNotificationError:
+        string | null = null;
+
+      try {
+        const {
+          data: lineUser,
+          error: lineUserError,
+        } = await supabase
+          .from("line_users")
+          .select(
+            "line_user_id, display_name, status"
+          )
+          .eq(
+            "customer_id",
+            existingOrder.customer_id
+          )
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (lineUserError) {
+          throw lineUserError;
+        }
+
+        if (!lineUser?.line_user_id) {
+          throw new Error(
+            "ไม่พบ LINE user ของลูกค้าคนนี้"
+          );
+        }
+
+        const accessToken =
+          Deno.env.get(
+            "LINE_CHANNEL_ACCESS_TOKEN"
+          );
+
+        const liffId =
+          Deno.env.get("LINE_LIFF_ID");
+
+        if (!accessToken) {
+          throw new Error(
+            "LINE_CHANNEL_ACCESS_TOKEN is missing"
+          );
+        }
+
+        if (!liffId) {
+          throw new Error(
+            "LINE_LIFF_ID is missing"
+          );
+        }
+
+        const {
+          data: medication,
+          error: medicationError,
+        } = await supabase
+          .from("medications")
+          .select(
+            "drug_name, strength"
+          )
+          .eq(
+            "id",
+            existingOrder.medication_id
+          )
+          .maybeSingle();
+
+        if (medicationError) {
+          throw medicationError;
+        }
+
+        const drugName =
+          medication?.drug_name ||
+          "ยาของคุณ";
+
+        const strength =
+          medication?.strength
+            ? ` ${medication.strength}`
+            : "";
+
+        const customerAppUrl =
+          `https://liff.line.me/${liffId}`;
+
+        const lineResponse =
+          await fetch(
+            "https://api.line.me/v2/bot/message/push",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Authorization:
+                  `Bearer ${accessToken}`,
+              },
+
+              body: JSON.stringify({
+                to:
+                  lineUser.line_user_id,
+
+                messages: [
+                  {
+                    type: "template",
+
+                    altText:
+                      `รับ ${drugName}${strength} เรียบร้อยแล้ว`,
+
+                    template: {
+                      type: "buttons",
+
+                      title:
+                        "รับยาเรียบร้อยแล้ว",
+
+                      text:
+                        `${drugName}${strength}\n` +
+                        `รับยาเรียบร้อยแล้ว\n` +
+                        `ติดตามรอบถัดไปในปฏิทินยา`,
+
+                      actions: [
+                        {
+                          type: "uri",
+
+                          label:
+                            "ดูปฏิทินยา",
+
+                          uri:
+                            customerAppUrl,
+                        },
+                      ],
+                    },
+                  },
+                ],
+              }),
+            }
+          );
+
+        if (!lineResponse.ok) {
+          const detail =
+            await lineResponse.text();
+
+          throw new Error(
+            `LINE API error: ${detail}`
+          );
+        }
+
+        lineNotificationSent = true;
+      } catch (lineError) {
+        lineNotificationError =
+          lineError instanceof Error
+            ? lineError.message
+            : "ส่ง LINE ไม่สำเร็จ";
+
+        console.error(
+          "PICKED UP LINE NOTIFICATION ERROR:",
+          lineError
+        );
+      }
+
       return json({
         success: true,
+
         message:
           "บันทึกการรับยาเรียบร้อย",
+
         order,
+
+        line_notification_sent:
+          lineNotificationSent,
+
+        line_notification_error:
+          lineNotificationError,
       });
     }
 
@@ -1794,6 +1962,74 @@ Deno.serve(async (req) => {
         success: true,
         signed_url:
           signedData.signedUrl,
+      });
+    }
+    // ====================================
+    // ACTION : SAVE PUSH SUBSCRIPTION
+    // ====================================
+
+    if (body.action === "save_push_subscription") {
+      const {
+        subscription,
+        user_agent,
+      } = body;
+
+      if (
+        !subscription?.endpoint ||
+        !subscription?.keys?.p256dh ||
+        !subscription?.keys?.auth
+      ) {
+        return json(
+          {
+            error:
+              "Push subscription ไม่ครบถ้วน",
+          },
+          400
+        );
+      }
+
+      const {
+        data: savedSubscription,
+        error: saveError,
+      } = await supabase
+        .from(
+          "pharmacist_push_subscriptions"
+        )
+        .upsert(
+          {
+            pharmacist_id:
+              pharmacist.id,
+
+            endpoint:
+              subscription.endpoint,
+
+            p256dh:
+              subscription.keys.p256dh,
+
+            auth:
+              subscription.keys.auth,
+
+            user_agent:
+              user_agent || null,
+
+            updated_at:
+              new Date().toISOString(),
+          },
+          {
+            onConflict: "endpoint",
+          }
+        )
+        .select()
+        .single();
+
+      if (saveError) {
+        throw saveError;
+      }
+
+      return json({
+        success: true,
+        subscription:
+          savedSubscription,
       });
     }
 

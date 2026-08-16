@@ -12,16 +12,25 @@ async function callAdminApi(payload) {
     throw new Error("กรุณาเข้าสู่ระบบ");
   }
 
-  const response = await fetch(FUNCTION_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    FUNCTION_URL,
+    {
+      method: "POST",
 
-  const result = await response.json();
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        Authorization:
+          `Bearer ${session.access_token}`,
+      },
+
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const result =
+    await response.json();
 
   console.log(
     "PHARMACIST ADMIN API RESPONSE:",
@@ -53,7 +62,9 @@ export async function getPendingLineUsers() {
 // รองรับใบสั่งยาจากแพทย์ Optional
 // ==============================
 
-export async function linkCustomer(payload) {
+export async function linkCustomer(
+  payload
+) {
   const medications =
     await Promise.all(
       (payload.medications || []).map(
@@ -63,7 +74,6 @@ export async function linkCustomer(payload) {
             ...plainMedication
           } = medication;
 
-          // ไม่มีใบสั่งแพทย์
           if (!prescription_file) {
             return {
               ...plainMedication,
@@ -79,7 +89,6 @@ export async function linkCustomer(payload) {
             };
           }
 
-          // มีใบสั่งแพทย์
           const prescription_file_base64 =
             await fileToBase64(
               prescription_file
@@ -124,7 +133,9 @@ export async function getAllCustomers() {
 // รองรับใบสั่งยาจากแพทย์ Optional
 // ==============================
 
-export async function addMedication(payload) {
+export async function addMedication(
+  payload
+) {
   const {
     prescription_file,
     ...plainPayload
@@ -141,7 +152,6 @@ export async function addMedication(payload) {
       null,
   };
 
-  // ถ้ามีใบสั่งแพทย์
   if (prescription_file) {
     prescriptionPayload = {
       prescription_file_base64:
@@ -172,7 +182,8 @@ export async function addMedication(payload) {
 
 export async function getConfirmedOrders() {
   return callAdminApi({
-    action: "list_confirmed_orders",
+    action:
+      "list_confirmed_orders",
   });
 }
 
@@ -329,10 +340,59 @@ export async function markPickedUp({
 }
 
 // ==============================
+// SAVE PHARMACIST PUSH SUBSCRIPTION
+// ==============================
+
+export async function savePushSubscription(
+  subscription
+) {
+  if (!subscription) {
+    throw new Error(
+      "ไม่พบ Push Subscription"
+    );
+  }
+
+  const json =
+    subscription.toJSON();
+
+  if (
+    !json.endpoint ||
+    !json.keys?.p256dh ||
+    !json.keys?.auth
+  ) {
+    throw new Error(
+      "Push Subscription ไม่ครบถ้วน"
+    );
+  }
+
+  return callAdminApi({
+    action:
+      "save_push_subscription",
+
+    subscription: {
+      endpoint:
+        json.endpoint,
+
+      keys: {
+        p256dh:
+          json.keys.p256dh,
+
+        auth:
+          json.keys.auth,
+      },
+    },
+
+    user_agent:
+      navigator.userAgent,
+  });
+}
+
+// ==============================
 // FILE → BASE64
 // ใช้ร่วมกันทั้ง
 // - ใบสั่งแพทย์
 // - ใบยืนยันการสั่งซื้อ
+// - ใบเสร็จ
 // ==============================
 
 function fileToBase64(file) {

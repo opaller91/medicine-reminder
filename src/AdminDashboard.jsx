@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import {
   getPendingLineUsers,
-  getAllCustomers,
   linkCustomer,
+  getAllCustomers,
   addMedication,
   getConfirmedOrders,
   uploadOrderDocument,
   getOrderDocumentUrl,
   markReady,
   markPickedUp,
+  savePushSubscription,
 } from "./adminApi";
 
 function AdminDashboard() {
@@ -21,6 +22,12 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("pending");
+  const [notificationState, setNotificationState] = useState(
+    typeof Notification !== "undefined"
+      ? Notification.permission
+      : "unsupported"
+  );
+  const [notificationLoading, setNotificationLoading] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -99,6 +106,107 @@ function AdminDashboard() {
     }
   }
 
+  function urlBase64ToUint8Array(base64String) {
+    const padding =
+      "=".repeat(
+        (4 - (base64String.length % 4)) % 4
+      );
+
+    const base64 =
+      (base64String + padding)
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const rawData =
+      window.atob(base64);
+
+    return Uint8Array.from(
+      [...rawData].map(
+        (char) => char.charCodeAt(0)
+      )
+    );
+  }
+
+  async function enableNotifications() {
+    try {
+      setNotificationLoading(true);
+      setError("");
+
+      if (
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window) ||
+        typeof Notification === "undefined"
+      ) {
+        throw new Error(
+          "อุปกรณ์หรือเบราว์เซอร์นี้ยังไม่รองรับ Push Notification"
+        );
+      }
+
+      const publicKey =
+        import.meta.env
+          .VITE_VAPID_PUBLIC_KEY;
+
+      if (!publicKey) {
+        throw new Error(
+          "ไม่พบ VITE_VAPID_PUBLIC_KEY"
+        );
+      }
+
+      const permission =
+        await Notification.requestPermission();
+
+      setNotificationState(permission);
+
+      if (permission !== "granted") {
+        throw new Error(
+          permission === "denied"
+            ? "การแจ้งเตือนถูกปฏิเสธ กรุณาเปิดสิทธิ์ Notification ในการตั้งค่าของอุปกรณ์"
+            : "ยังไม่ได้อนุญาตการแจ้งเตือน"
+        );
+      }
+
+      const registration =
+        await navigator.serviceWorker.ready;
+
+      let subscription =
+        await registration.pushManager
+          .getSubscription();
+
+      if (!subscription) {
+        subscription =
+          await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey:
+              urlBase64ToUint8Array(
+                publicKey
+              ),
+          });
+      }
+
+      await savePushSubscription(
+        subscription
+      );
+
+      setNotificationState("granted");
+
+      alert(
+        "เปิดการแจ้งเตือนสำหรับเภสัชกรเรียบร้อย"
+      );
+    } catch (err) {
+      console.error(
+        "ENABLE PUSH NOTIFICATION ERROR:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "ไม่สามารถเปิดการแจ้งเตือนได้"
+      );
+    } finally {
+      setNotificationLoading(false);
+    }
+  }
+
   async function logout() {
     await supabase.auth.signOut();
     window.location.reload();
@@ -128,9 +236,56 @@ function AdminDashboard() {
           )}
         </div>
 
-        <button onClick={logout} style={styles.logout}>
-          ออกจากระบบ
-        </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            type="button"
+            onClick={enableNotifications}
+            disabled={
+              notificationLoading ||
+              notificationState === "granted"
+            }
+            style={{
+              ...styles.logout,
+              background:
+                notificationState === "granted"
+                  ? "#e8f7f4"
+                  : "#ffffff",
+              color:
+                notificationState === "granted"
+                  ? "#238a72"
+                  : "#24323d",
+              border:
+                notificationState === "granted"
+                  ? "1px solid #bfe5dc"
+                  : "1px solid #d9e2e6",
+              opacity:
+                notificationLoading
+                  ? 0.7
+                  : 1,
+            }}
+          >
+            {notificationLoading
+              ? "กำลังเปิด..."
+              : notificationState === "granted"
+              ? "🔔 เปิดแจ้งเตือนแล้ว"
+              : "🔔 เปิดการแจ้งเตือน"}
+          </button>
+
+          <button
+            onClick={logout}
+            style={styles.logout}
+          >
+            ออกจากระบบ
+          </button>
+        </div>
       </header>
 
       <div style={styles.tabs}>
