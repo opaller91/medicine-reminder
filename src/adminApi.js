@@ -388,6 +388,16 @@ export async function savePushSubscription(
 }
 
 // ==============================
+// TEST PHARMACIST PUSH
+// ==============================
+
+export async function testPush() {
+  return callAdminApi({
+    action: "test_push",
+  });
+}
+
+// ==============================
 // FILE → BASE64
 // ใช้ร่วมกันทั้ง
 // - ใบสั่งแพทย์

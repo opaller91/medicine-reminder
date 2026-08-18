@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -2030,6 +2031,183 @@ Deno.serve(async (req) => {
         success: true,
         subscription:
           savedSubscription,
+      });
+    }
+
+    // ====================================
+    // ACTION : TEST PUSH
+    // ยิง Push ไปยังอุปกรณ์ของเภสัชกรที่ login อยู่
+    // ====================================
+
+    if (body.action === "test_push") {
+      const vapidPublicKey =
+        Deno.env.get("VAPID_PUBLIC_KEY");
+
+      const vapidPrivateKey =
+        Deno.env.get("VAPID_PRIVATE_KEY");
+
+      const vapidSubject =
+        Deno.env.get("VAPID_SUBJECT") ||
+        "https://uhvcakajcdxkykopekgg.supabase.co";
+
+      if (
+        !vapidPublicKey ||
+        !vapidPrivateKey
+      ) {
+        return json(
+          {
+            error:
+              "VAPID_PUBLIC_KEY หรือ VAPID_PRIVATE_KEY ยังไม่ได้ตั้งค่า",
+          },
+          500
+        );
+      }
+
+      webpush.setVapidDetails(
+        vapidSubject,
+        vapidPublicKey,
+        vapidPrivateKey
+      );
+
+      const {
+        data: subscriptions,
+        error: subscriptionsError,
+      } = await supabase
+        .from(
+          "pharmacist_push_subscriptions"
+        )
+        .select(
+          "id, endpoint, p256dh, auth"
+        )
+        .eq(
+          "pharmacist_id",
+          pharmacist.id
+        );
+
+      if (subscriptionsError) {
+        throw subscriptionsError;
+      }
+
+      if (
+        !subscriptions ||
+        subscriptions.length === 0
+      ) {
+        return json(
+          {
+            error:
+              "ยังไม่มี Push Subscription ของเภสัชกรคนนี้",
+          },
+          404
+        );
+      }
+
+      const payload =
+        JSON.stringify({
+          title:
+            "Tata Medication",
+          body:
+            "ทดสอบแจ้งเตือนฝั่งเภสัชกรสำเร็จ",
+          url:
+            "/admin?tab=orders",
+        });
+
+      const results = [];
+
+      for (
+        const subscription
+        of subscriptions
+      ) {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint:
+                subscription.endpoint,
+
+              keys: {
+                p256dh:
+                  subscription.p256dh,
+
+                auth:
+                  subscription.auth,
+              },
+            },
+            payload
+          );
+
+          results.push({
+            id:
+              subscription.id,
+            success: true,
+          });
+        } catch (pushError) {
+          const statusCode =
+            typeof pushError === "object" &&
+            pushError &&
+            "statusCode" in pushError
+              ? Number(
+                  (
+                    pushError as {
+                      statusCode?: number;
+                    }
+                  ).statusCode
+                )
+              : null;
+
+          const message =
+            pushError instanceof Error
+              ? pushError.message
+              : "Push ไม่สำเร็จ";
+
+          console.error(
+            "TEST PUSH ERROR:",
+            pushError
+          );
+
+          if (
+            statusCode === 404 ||
+            statusCode === 410
+          ) {
+            await supabase
+              .from(
+                "pharmacist_push_subscriptions"
+              )
+              .delete()
+              .eq(
+                "id",
+                subscription.id
+              );
+          }
+
+          results.push({
+            id:
+              subscription.id,
+            success: false,
+            status_code:
+              statusCode,
+            error:
+              message,
+          });
+        }
+      }
+
+      const successCount =
+        results.filter(
+          (item) => item.success
+        ).length;
+
+      return json({
+        success:
+          successCount > 0,
+
+        pharmacist,
+
+        sent:
+          successCount,
+
+        total:
+          results.length,
+
+        results,
       });
     }
 

@@ -11,6 +11,7 @@ import {
   markReady,
   markPickedUp,
   savePushSubscription,
+  testPush,
 } from "./adminApi";
 
 function AdminDashboard() {
@@ -207,6 +208,28 @@ function AdminDashboard() {
     }
   }
 
+  async function handleTestPush() {
+    try {
+      setNotificationLoading(true);
+      setError("");
+
+      const result = await testPush();
+
+      console.log("TEST PUSH RESULT:", result);
+
+      if (result?.success) {
+        alert("ส่ง Test Push แล้ว กรุณาดูการแจ้งเตือนที่ iPhone");
+      } else {
+        throw new Error(result?.error || "ส่ง Test Push ไม่สำเร็จ");
+      }
+    } catch (err) {
+      console.error("TEST PUSH ERROR:", err);
+      setError(err?.message || "ไม่สามารถทดสอบการแจ้งเตือนได้");
+    } finally {
+      setNotificationLoading(false);
+    }
+  }
+
   async function logout() {
     await supabase.auth.signOut();
     window.location.reload();
@@ -277,6 +300,30 @@ function AdminDashboard() {
               : notificationState === "granted"
               ? "🔔 เปิดแจ้งเตือนแล้ว"
               : "🔔 เปิดการแจ้งเตือน"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTestPush}
+            disabled={
+              notificationLoading ||
+              notificationState !== "granted"
+            }
+            style={{
+              ...styles.logout,
+              background: "#238a72",
+              color: "#ffffff",
+              border: "1px solid #238a72",
+              opacity:
+                notificationLoading ||
+                notificationState !== "granted"
+                  ? 0.5
+                  : 1,
+            }}
+          >
+            {notificationLoading
+              ? "กำลังส่ง..."
+              : "🔔 ทดสอบแจ้งเตือน"}
           </button>
 
           <button
