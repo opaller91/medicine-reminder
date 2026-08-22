@@ -272,19 +272,31 @@ export async function markReady(
 // ==============================
 // ลูกค้ารับยาแล้ว
 // ready -> picked_up
-// ต้องมีราคาขายจริง + ใบเสร็จ
+//
+// รองรับ Repeat Order:
+// repeat_enabled = true/false
+// next_days_supply = จำนวนวันรอบถัดไป
+// next_quantity = จำนวนยารอบถัดไป
 // ==============================
 
 export async function markPickedUp({
   order_id,
   actual_price,
   receipt_file,
+
+  repeat_enabled = true,
+  next_days_supply = null,
+  next_quantity = null,
 }) {
   if (!order_id) {
     throw new Error(
       "ไม่พบ order_id"
     );
   }
+
+  // ------------------------------
+  // ตรวจราคาขายจริง
+  // ------------------------------
 
   if (
     actual_price === "" ||
@@ -308,16 +320,82 @@ export async function markPickedUp({
     );
   }
 
+  // ------------------------------
+  // ตรวจใบเสร็จ
+  // ------------------------------
+
   if (!receipt_file) {
     throw new Error(
       "กรุณาแนบรูปใบเสร็จ"
     );
   }
 
+  // ------------------------------
+  // ตรวจข้อมูล Repeat Order
+  // ------------------------------
+
+  const repeatEnabled =
+    repeat_enabled !== false;
+
+  let parsedNextDaysSupply =
+    null;
+
+  let parsedNextQuantity =
+    null;
+
+  if (repeatEnabled) {
+    parsedNextDaysSupply =
+      Number(next_days_supply);
+
+    if (
+      next_days_supply === "" ||
+      next_days_supply === null ||
+      next_days_supply === undefined ||
+      !Number.isFinite(
+        parsedNextDaysSupply
+      ) ||
+      parsedNextDaysSupply <= 0
+    ) {
+      throw new Error(
+        "กรุณาระบุจำนวนวันที่ใช้ยารอบถัดไป"
+      );
+    }
+
+    // จำนวนยาให้เป็น optional ได้
+    // แต่ถ้ากรอก ต้องเป็นค่ามากกว่า 0
+    if (
+      next_quantity !== "" &&
+      next_quantity !== null &&
+      next_quantity !== undefined
+    ) {
+      parsedNextQuantity =
+        Number(next_quantity);
+
+      if (
+        !Number.isFinite(
+          parsedNextQuantity
+        ) ||
+        parsedNextQuantity <= 0
+      ) {
+        throw new Error(
+          "กรุณาระบุจำนวนยารอบถัดไปให้ถูกต้อง"
+        );
+      }
+    }
+  }
+
+  // ------------------------------
+  // แปลงใบเสร็จเป็น Base64
+  // ------------------------------
+
   const receipt_file_base64 =
     await fileToBase64(
       receipt_file
     );
+
+  // ------------------------------
+  // ส่งเข้า pharmacist-admin
+  // ------------------------------
 
   return callAdminApi({
     action: "mark_picked_up",
@@ -336,6 +414,20 @@ export async function markPickedUp({
     receipt_content_type:
       receipt_file.type ||
       "image/jpeg",
+
+    // Repeat Order
+    repeat_enabled:
+      repeatEnabled,
+
+    next_days_supply:
+      repeatEnabled
+        ? parsedNextDaysSupply
+        : null,
+
+    next_quantity:
+      repeatEnabled
+        ? parsedNextQuantity
+        : null,
   });
 }
 

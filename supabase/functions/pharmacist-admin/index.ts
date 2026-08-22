@@ -612,11 +612,20 @@ Deno.serve(async (req) => {
           customer_id,
           medication_id,
           status,
+
+          repeat_number,
+          is_repeat,
+          previous_order_id,
+          days_supply,
+          quantity,
+
           expected_runout_date,
           confirm_reminder_date,
           pickup_date,
           confirmed_at,
           ordered_at,
+          ready_at,
+          picked_up_at,
           created_at,
 
           customers (
@@ -1482,6 +1491,9 @@ Deno.serve(async (req) => {
         receipt_file_base64,
         receipt_file_name,
         receipt_content_type,
+        repeat_enabled = true,
+        next_days_supply,
+        next_quantity,
       } = body;
 
       if (!order_id) {
@@ -1532,8 +1544,19 @@ Deno.serve(async (req) => {
           status,
           customer_id,
           medication_id,
+          repeat_number,
+          days_supply,
+          quantity,
           customers (
             branch_name
+          ),
+          medications (
+            id,
+            drug_name,
+            strength,
+            days_supply,
+            quantity,
+            repeat_enabled
           )
         `)
         .eq("id", order_id)
@@ -1696,6 +1719,192 @@ Deno.serve(async (req) => {
               "สถานะรายการมีการเปลี่ยนแปลง กรุณาโหลดใหม่อีกครั้ง",
           },
           409
+        );
+      }
+
+      // ====================================
+      // สร้าง REPEAT ORDER รอบถัดไปอัตโนมัติ
+      // ====================================
+
+      let nextOrder = null;
+      let repeatOrderCreated = false;
+      let repeatOrderError: string | null = null;
+
+      try {
+        const medication =
+          getRelatedMedication(
+            existingOrder.medications
+          ) as {
+            id?: string;
+            days_supply?: number | null;
+            quantity?: number | null;
+            repeat_enabled?: boolean | null;
+          } | null;
+
+        const shouldRepeat =
+          repeat_enabled !== false;
+
+        const parsedDaysSupply = Number(
+          next_days_supply ??
+            medication?.days_supply ??
+            existingOrder.days_supply
+        );
+
+        const rawQuantity =
+          next_quantity ??
+          medication?.quantity ??
+          existingOrder.quantity;
+
+        const parsedQuantity =
+          rawQuantity === null ||
+          rawQuantity === undefined ||
+          rawQuantity === ""
+            ? null
+            : Number(rawQuantity);
+
+        // เก็บค่า default ล่าสุดไว้ที่ยา
+        const medicationUpdate: Record<string, unknown> = {
+          repeat_enabled: shouldRepeat,
+        };
+
+        if (
+          Number.isInteger(parsedDaysSupply) &&
+          parsedDaysSupply > 0
+        ) {
+          medicationUpdate.days_supply =
+            parsedDaysSupply;
+        }
+
+        if (
+          parsedQuantity !== null &&
+          Number.isFinite(parsedQuantity) &&
+          parsedQuantity >= 0
+        ) {
+          medicationUpdate.quantity =
+            parsedQuantity;
+        }
+
+        const { error: medicationUpdateError } =
+          await supabase
+            .from("medications")
+            .update(medicationUpdate)
+            .eq(
+              "id",
+              existingOrder.medication_id
+            );
+
+        if (medicationUpdateError) {
+          throw medicationUpdateError;
+        }
+
+        if (shouldRepeat) {
+          if (
+            !Number.isInteger(parsedDaysSupply) ||
+            parsedDaysSupply <= 0
+          ) {
+            throw new Error(
+              "จำนวนวันสำหรับรอบถัดไปไม่ถูกต้อง"
+            );
+          }
+
+          if (
+            parsedQuantity !== null &&
+            (!Number.isFinite(parsedQuantity) ||
+              parsedQuantity < 0)
+          ) {
+            throw new Error(
+              "จำนวนยาสำหรับรอบถัดไปไม่ถูกต้อง"
+            );
+          }
+
+          // กันการสร้าง Repeat ซ้ำ หาก request ถูกยิงซ้ำ
+          const {
+            data: existingNextOrder,
+            error: existingNextOrderError,
+          } = await supabase
+            .from("medication_orders")
+            .select("*")
+            .eq(
+              "previous_order_id",
+              order_id
+            )
+            .maybeSingle();
+
+          if (existingNextOrderError) {
+            throw existingNextOrderError;
+          }
+
+          if (existingNextOrder) {
+            nextOrder = existingNextOrder;
+          } else {
+            const nextStartDate =
+              getBangkokDateString();
+
+            const nextExpectedRunoutDate =
+              addDaysToDateString(
+                nextStartDate,
+                parsedDaysSupply
+              );
+
+            const nextConfirmReminderDate =
+              addDaysToDateString(
+                nextExpectedRunoutDate,
+                -14
+              );
+
+            const currentRepeatNumber =
+              Number(
+                existingOrder.repeat_number ?? 1
+              ) || 1;
+
+            const {
+              data: createdNextOrder,
+              error: nextOrderError,
+            } = await supabase
+              .from("medication_orders")
+              .insert({
+                customer_id:
+                  existingOrder.customer_id,
+                medication_id:
+                  existingOrder.medication_id,
+                status:
+                  "waiting_confirmation",
+                expected_runout_date:
+                  nextExpectedRunoutDate,
+                confirm_reminder_date:
+                  nextConfirmReminderDate,
+                pickup_date:
+                  nextExpectedRunoutDate,
+                repeat_number:
+                  currentRepeatNumber + 1,
+                is_repeat: true,
+                previous_order_id:
+                  order_id,
+                days_supply:
+                  parsedDaysSupply,
+                quantity:
+                  parsedQuantity,
+              })
+              .select()
+              .single();
+
+            if (nextOrderError) {
+              throw nextOrderError;
+            }
+
+            nextOrder = createdNextOrder;
+            repeatOrderCreated = true;
+          }
+        }
+      } catch (repeatError) {
+        repeatOrderError =
+          repeatError instanceof Error
+            ? repeatError.message
+            : "สร้าง Repeat Order ไม่สำเร็จ";
+
+        console.error(
+          "REPEAT ORDER ERROR:",
+          repeatError
         );
       }
 
@@ -1866,6 +2075,15 @@ Deno.serve(async (req) => {
           "บันทึกการรับยาเรียบร้อย",
 
         order,
+
+        repeat_order_created:
+          repeatOrderCreated,
+
+        next_order:
+          nextOrder,
+
+        repeat_order_error:
+          repeatOrderError,
 
         line_notification_sent:
           lineNotificationSent,
@@ -2238,6 +2456,39 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// ====================================
+// HELPER : TODAY IN ASIA/BANGKOK
+// ====================================
+function getBangkokDateString() {
+  const parts = new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).formatToParts(new Date());
+
+  const year = parts.find(
+    (part) => part.type === "year"
+  )?.value;
+  const month = parts.find(
+    (part) => part.type === "month"
+  )?.value;
+  const day = parts.find(
+    (part) => part.type === "day"
+  )?.value;
+
+  if (!year || !month || !day) {
+    throw new Error(
+      "ไม่สามารถคำนวณวันที่ประเทศไทยได้"
+    );
+  }
+
+  return `${year}-${month}-${day}`;
+}
 
 // ====================================
 // HELPER : ADD DAYS TO YYYY-MM-DD

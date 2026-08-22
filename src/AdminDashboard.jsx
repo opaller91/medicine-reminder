@@ -682,11 +682,43 @@ function PickupOrderCard({
     setReceiptPreviewUrl,
   ] = useState("");
 
+  // ==============================
+  // REPEAT ORDER
+  // Default = เปิด
+  // ==============================
+
+  const [repeatEnabled, setRepeatEnabled] =
+    useState(true);
+
+  const [nextDaysSupply, setNextDaysSupply] =
+    useState(
+      String(
+        order.days_supply ??
+          medication?.days_supply ??
+          30
+      )
+    );
+
+  const [nextQuantity, setNextQuantity] =
+    useState(
+      String(
+        order.quantity ??
+          medication?.quantity ??
+          ""
+      )
+    );
+
   const [saving, setSaving] =
     useState(false);
 
   const [error, setError] =
     useState("");
+
+  const currentRepeatNumber =
+    Number(order.repeat_number || 1);
+
+  const nextRepeatNumber =
+    currentRepeatNumber + 1;
 
   function selectReceiptFile(e) {
     const selected =
@@ -713,6 +745,7 @@ function PickupOrderCard({
       setError(
         "ใบเสร็จรองรับไฟล์รูปภาพเท่านั้น"
       );
+
       return;
     }
 
@@ -723,6 +756,7 @@ function PickupOrderCard({
       setError(
         "ไฟล์ใบเสร็จต้องมีขนาดไม่เกิน 10 MB"
       );
+
       return;
     }
 
@@ -734,6 +768,7 @@ function PickupOrderCard({
 
     setError("");
     setReceiptFile(selected);
+
     setReceiptPreviewUrl(
       URL.createObjectURL(selected)
     );
@@ -751,6 +786,7 @@ function PickupOrderCard({
       setError(
         "กรุณากรอกราคาขายจริงให้ถูกต้อง"
       );
+
       return;
     }
 
@@ -758,18 +794,83 @@ function PickupOrderCard({
       setError(
         "กรุณาแนบรูปใบเสร็จ"
       );
+
       return;
+    }
+
+    // ==============================
+    // VALIDATE REPEAT ORDER
+    // ==============================
+
+    let parsedDaysSupply = null;
+    let parsedQuantity = null;
+
+    if (repeatEnabled) {
+      parsedDaysSupply =
+        Number(nextDaysSupply);
+
+      if (
+        nextDaysSupply === "" ||
+        !Number.isFinite(
+          parsedDaysSupply
+        ) ||
+        parsedDaysSupply <= 0
+      ) {
+        setError(
+          "กรุณาระบุจำนวนวันที่ใช้ยารอบถัดไป"
+        );
+
+        return;
+      }
+
+      if (
+        nextQuantity !== ""
+      ) {
+        parsedQuantity =
+          Number(nextQuantity);
+
+        if (
+          !Number.isFinite(
+            parsedQuantity
+          ) ||
+          parsedQuantity <= 0
+        ) {
+          setError(
+            "กรุณาระบุจำนวนยารอบถัดไปให้ถูกต้อง"
+          );
+
+          return;
+        }
+      }
+    }
+
+    let confirmMessage =
+      `ยืนยันว่าลูกค้ารับยาเรียบร้อยแล้ว\n` +
+      `ยอดขายจริง ${price.toLocaleString(
+        "th-TH",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }
+      )} บาท`;
+
+    if (repeatEnabled) {
+      confirmMessage +=
+        `\n\nเปิด Repeat Order รอบ #${nextRepeatNumber}` +
+        `\nใช้ยา ${parsedDaysSupply} วัน`;
+
+      if (parsedQuantity !== null) {
+        confirmMessage +=
+          `\nจำนวน ${parsedQuantity}`;
+      }
+    } else {
+      confirmMessage +=
+        "\n\nไม่สร้าง Repeat Order รอบถัดไป";
     }
 
     const confirmed =
       window.confirm(
-        `ยืนยันว่าลูกค้ารับยาเรียบร้อยแล้ว\nยอดขายจริง ${price.toLocaleString(
-          "th-TH",
-          {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          }
-        )} บาท`
+        confirmMessage
       );
 
     if (!confirmed) {
@@ -780,12 +881,30 @@ function PickupOrderCard({
       setSaving(true);
       setError("");
 
-      await markPickedUp({
-        order_id: order.id,
-        actual_price: price,
-        receipt_file:
-          receiptFile,
-      });
+      const result =
+        await markPickedUp({
+          order_id:
+            order.id,
+
+          actual_price:
+            price,
+
+          receipt_file:
+            receiptFile,
+
+          repeat_enabled:
+            repeatEnabled,
+
+          next_days_supply:
+            repeatEnabled
+              ? parsedDaysSupply
+              : null,
+
+          next_quantity:
+            repeatEnabled
+              ? parsedQuantity
+              : null,
+        });
 
       if (receiptPreviewUrl) {
         URL.revokeObjectURL(
@@ -797,9 +916,22 @@ function PickupOrderCard({
       setReceiptPreviewUrl("");
       setActualPrice("");
 
-      alert(
-        "บันทึกการรับยา ยอดขาย และใบเสร็จเรียบร้อย"
-      );
+      if (
+        repeatEnabled &&
+        result?.next_order
+      ) {
+        alert(
+          `บันทึกการรับยาเรียบร้อย\nสร้าง Repeat Order #${nextRepeatNumber} แล้ว`
+        );
+      } else if (repeatEnabled) {
+        alert(
+          `บันทึกการรับยาเรียบร้อย\nเปิด Repeat Order รอบ #${nextRepeatNumber} แล้ว`
+        );
+      } else {
+        alert(
+          "บันทึกการรับยาเรียบร้อย"
+        );
+      }
 
       await onSaved();
     } catch (err) {
@@ -817,6 +949,29 @@ function PickupOrderCard({
     }
   }
 
+  // ==============================
+  // VALIDATE BUTTON
+  // ==============================
+
+  const repeatValid =
+    !repeatEnabled ||
+    (
+      nextDaysSupply !== "" &&
+      Number.isFinite(
+        Number(nextDaysSupply)
+      ) &&
+      Number(nextDaysSupply) > 0 &&
+      (
+        nextQuantity === "" ||
+        (
+          Number.isFinite(
+            Number(nextQuantity)
+          ) &&
+          Number(nextQuantity) > 0
+        )
+      )
+    );
+
   const canSubmit =
     actualPrice !== "" &&
     Number.isFinite(
@@ -824,13 +979,16 @@ function PickupOrderCard({
     ) &&
     Number(actualPrice) >= 0 &&
     Boolean(receiptFile) &&
+    repeatValid &&
     !saving;
 
   return (
     <div style={styles.orderTaskCard}>
-      <div
-        style={styles.orderTaskHeader}
-      >
+      {/* ========================= */}
+      {/* CUSTOMER */}
+      {/* ========================= */}
+
+      <div style={styles.orderTaskHeader}>
         <div
           style={{
             minWidth: 0,
@@ -870,6 +1028,10 @@ function PickupOrderCard({
         </span>
       </div>
 
+      {/* ========================= */}
+      {/* MEDICATION */}
+      {/* ========================= */}
+
       <div style={styles.orderDrugBox}>
         <strong>
           {medication?.drug_name ||
@@ -882,7 +1044,9 @@ function PickupOrderCard({
 
         <span>
           จำนวน{" "}
-          {medication?.quantity ?? "-"}
+          {order.quantity ??
+            medication?.quantity ??
+            "-"}
         </span>
 
         <span>
@@ -891,15 +1055,20 @@ function PickupOrderCard({
             ?.dosage_instruction ||
             "-"}
         </span>
+
+        <span>
+          รอบปัจจุบัน #{" "}
+          {currentRepeatNumber}
+        </span>
       </div>
 
-      <div
-        style={styles.orderTaskDates}
-      >
+      {/* ========================= */}
+      {/* DATES */}
+      {/* ========================= */}
+
+      <div style={styles.orderTaskDates}>
         <div>
-          <span
-            style={styles.orderLabel}
-          >
+          <span style={styles.orderLabel}>
             ยาพร้อมเมื่อ
           </span>
 
@@ -911,9 +1080,7 @@ function PickupOrderCard({
         </div>
 
         <div>
-          <span
-            style={styles.orderLabel}
-          >
+          <span style={styles.orderLabel}>
             นัดรับยา
           </span>
 
@@ -924,6 +1091,10 @@ function PickupOrderCard({
           </strong>
         </div>
       </div>
+
+      {/* ========================= */}
+      {/* PICKUP */}
+      {/* ========================= */}
 
       <div
         style={{
@@ -943,6 +1114,8 @@ function PickupOrderCard({
         >
           บันทึกการรับยา
         </strong>
+
+        {/* PRICE */}
 
         <label
           style={{
@@ -984,13 +1157,11 @@ function PickupOrderCard({
               style={{
                 flex: 1,
                 minWidth: 0,
-                padding:
-                  "11px 12px",
+                padding: "11px 12px",
                 border:
                   "1px solid #d7e1e4",
                 borderRadius: 10,
-                background:
-                  "#ffffff",
+                background: "#ffffff",
                 fontSize: 14,
                 outline: "none",
                 boxSizing:
@@ -1002,14 +1173,15 @@ function PickupOrderCard({
               style={{
                 fontSize: 12,
                 color: "#52606c",
-                whiteSpace:
-                  "nowrap",
+                whiteSpace: "nowrap",
               }}
             >
               บาท
             </span>
           </div>
         </label>
+
+        {/* RECEIPT */}
 
         <div style={styles.documentArea}>
           <div
@@ -1022,9 +1194,7 @@ function PickupOrderCard({
                 ใบเสร็จ *
               </strong>
 
-              <div
-                style={styles.muted}
-              >
+              <div style={styles.muted}>
                 ถ่ายรูปหรือเลือกภาพใบเสร็จ
               </div>
             </div>
@@ -1055,7 +1225,9 @@ function PickupOrderCard({
 
           {receiptPreviewUrl ? (
             <div
-              style={styles.previewWrap}
+              style={
+                styles.previewWrap
+              }
             >
               <img
                 src={
@@ -1068,20 +1240,249 @@ function PickupOrderCard({
               />
 
               <div
-                style={styles.previewName}
+                style={
+                  styles.previewName
+                }
               >
                 {receiptFile?.name}
               </div>
             </div>
           ) : (
             <div
-              style={styles.noDocument}
+              style={
+                styles.noDocument
+              }
             >
               ยังไม่ได้แนบใบเสร็จ
             </div>
           )}
         </div>
       </div>
+
+      {/* ========================= */}
+      {/* REPEAT ORDER */}
+      {/* ========================= */}
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          border:
+            repeatEnabled
+              ? "1px solid #bfe5dc"
+              : "1px solid #dfeaec",
+          borderRadius: 14,
+          background:
+            repeatEnabled
+              ? "#f2fbf8"
+              : "#f8fafb",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent:
+              "space-between",
+            gap: 12,
+          }}
+        >
+          <div>
+            <strong
+              style={{
+                display: "block",
+                fontSize: 14,
+              }}
+            >
+              🔁 Repeat Order
+            </strong>
+
+            <span
+              style={{
+                display: "block",
+                marginTop: 3,
+                fontSize: 11,
+                color: "#68747e",
+              }}
+            >
+              ต่อรอบยาสำหรับการใช้ยาต่อเนื่อง
+            </span>
+          </div>
+
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() =>
+              setRepeatEnabled(
+                (current) =>
+                  !current
+              )
+            }
+            style={{
+              border: "none",
+              borderRadius: 999,
+              padding: "7px 13px",
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: 700,
+              background:
+                repeatEnabled
+                  ? "#238a72"
+                  : "#dfe5e8",
+              color:
+                repeatEnabled
+                  ? "#ffffff"
+                  : "#68747e",
+            }}
+          >
+            {repeatEnabled
+              ? "ON"
+              : "OFF"}
+          </button>
+        </div>
+
+        {repeatEnabled && (
+          <>
+            <div
+              style={{
+                marginTop: 14,
+                padding: "9px 11px",
+                background:
+                  "#e8f7f4",
+                borderRadius: 10,
+                fontSize: 12,
+                color: "#238a72",
+                fontWeight: 600,
+              }}
+            >
+              รอบถัดไป Repeat Order #
+              {nextRepeatNumber}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "1fr 1fr",
+                gap: 10,
+                marginTop: 12,
+              }}
+            >
+              <label>
+                <span
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  จำนวนวันที่ใช้ยา *
+                </span>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={
+                      nextDaysSupply
+                    }
+                    disabled={saving}
+                    onChange={(e) =>
+                      setNextDaysSupply(
+                        e.target.value
+                      )
+                    }
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      padding:
+                        "10px 9px",
+                      border:
+                        "1px solid #d7e1e4",
+                      borderRadius: 9,
+                      background:
+                        "#ffffff",
+                      boxSizing:
+                        "border-box",
+                    }}
+                  />
+
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "#68747e",
+                    }}
+                  >
+                    วัน
+                  </span>
+                </div>
+              </label>
+
+              <label>
+                <span
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  จำนวนยา
+                </span>
+
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={
+                    nextQuantity
+                  }
+                  disabled={saving}
+                  onChange={(e) =>
+                    setNextQuantity(
+                      e.target.value
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    padding:
+                      "10px 9px",
+                    border:
+                      "1px solid #d7e1e4",
+                    borderRadius: 9,
+                    background:
+                      "#ffffff",
+                    boxSizing:
+                      "border-box",
+                  }}
+                />
+              </label>
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 10,
+                color: "#68747e",
+                lineHeight: 1.5,
+              }}
+            >
+              ค่าเริ่มต้นใช้ข้อมูลจากรอบปัจจุบัน
+              เภสัชกรสามารถแก้จำนวนวันและจำนวนยาได้ก่อนบันทึก
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ERROR */}
 
       {error && (
         <div
@@ -1094,20 +1495,26 @@ function PickupOrderCard({
         </div>
       )}
 
+      {/* SUBMIT */}
+
       <button
         type="button"
         disabled={!canSubmit}
         onClick={submitPickedUp}
         style={{
           ...styles.readyButton,
+
           ...(!canSubmit
             ? styles.disabledButton
             : {}),
+
           background: "#238a72",
         }}
       >
         {saving
           ? "กำลังบันทึก..."
+          : repeatEnabled
+          ? `✓ รับยาแล้ว • ต่อรอบ #${nextRepeatNumber}`
           : "✓ ยืนยันลูกค้ารับยาแล้ว"}
       </button>
     </div>

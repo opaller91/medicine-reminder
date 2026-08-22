@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -489,113 +490,184 @@ Deno.serve(async (req) => {
     
     // ==============================
     // ACTION : CONFIRM ORDER
+    // ลูกค้ายืนยันสั่งยา + Push แจ้งเภสัชกรสาขาเดียวกัน
     // ==============================
 
     if (action === "confirm_order") {
-    const { order_id } = requestBody;
+      const { order_id } = requestBody;
 
-    if (!order_id) {
-        return json(
-        { error: "Missing order_id" },
-        400
-        );
-    }
+      if (!order_id) {
+        return json({ error: "Missing order_id" }, 400);
+      }
 
-    // หา LINE user ที่กำลังเปิด LIFF
-    const {
-        data: lineUser,
-        error: lineUserError,
-    } = await supabase
+      const { data: lineUser, error: lineUserError } = await supabase
         .from("line_users")
         .select("id, customer_id, status")
         .eq("line_user_id", lineUserId)
         .maybeSingle();
 
-    if (lineUserError) {
-        throw lineUserError;
-    }
+      if (lineUserError) throw lineUserError;
 
-    if (
-        !lineUser ||
-        !lineUser.customer_id ||
-        lineUser.status !== "active"
-    ) {
-        return json(
-        { error: "ยังไม่ได้เชื่อมข้อมูลลูกค้า" },
-        403
-        );
-    }
+      if (!lineUser || !lineUser.customer_id || lineUser.status !== "active") {
+        return json({ error: "ยังไม่ได้เชื่อมข้อมูลลูกค้า" }, 403);
+      }
 
-    // ตรวจว่า order นี้เป็นของ customer คนนี้จริง
-    const {
-        data: order,
-        error: orderError,
-    } = await supabase
+      const { data: order, error: orderError } = await supabase
         .from("medication_orders")
         .select(`
-        id,
-        customer_id,
-        status,
-        confirm_reminder_date,
-        pickup_date
+          id,
+          customer_id,
+          medication_id,
+          status,
+          confirm_reminder_date,
+          pickup_date
         `)
         .eq("id", order_id)
         .eq("customer_id", lineUser.customer_id)
         .maybeSingle();
 
-    if (orderError) {
-        throw orderError;
-    }
+      if (orderError) throw orderError;
 
-    if (!order) {
-        return json(
-        { error: "ไม่พบรอบยานี้" },
-        404
-        );
-    }
+      if (!order) {
+        return json({ error: "ไม่พบรอบยานี้" }, 404);
+      }
 
-    if (order.status === "confirmed") {
+      if (order.status === "confirmed") {
         return json({
-        success: true,
-        already_confirmed: true,
-        order,
+          success: true,
+          already_confirmed: true,
+          order,
         });
-    }
+      }
 
-    if (order.status !== "waiting_confirmation") {
-        return json(
-        {
-            error:
-            "รอบยานี้ไม่อยู่ในสถานะที่ยืนยันได้",
-        },
-        409
-        );
-    }
+      if (order.status !== "waiting_confirmation") {
+        return json({ error: "รอบยานี้ไม่อยู่ในสถานะที่ยืนยันได้" }, 409);
+      }
 
-    // update จริง
-    const {
-        data: updatedOrder,
-        error: updateError,
-    } = await supabase
+      const { data: updatedOrder, error: updateError } = await supabase
         .from("medication_orders")
         .update({
-        status: "confirmed",
-        confirmed_at:
-            new Date().toISOString(),
+          status: "confirmed",
+          confirmed_at: new Date().toISOString(),
         })
         .eq("id", order.id)
+        .eq("status", "waiting_confirmation")
         .select()
         .single();
 
-    if (updateError) {
-        throw updateError;
-    }
+      if (updateError) throw updateError;
 
-    return json({
+      let pushNotificationSent = false;
+      let pushNotificationError: string | null = null;
+
+      try {
+        const { data: customer, error: customerError } = await supabase
+          .from("customers")
+          .select("id, full_name, branch_name")
+          .eq("id", lineUser.customer_id)
+          .maybeSingle();
+
+        if (customerError) throw customerError;
+        if (!customer?.branch_name) throw new Error("ไม่พบสาขาของลูกค้า");
+
+        const { data: pharmacists, error: pharmacistError } = await supabase
+          .from("pharmacists")
+          .select("id, full_name, branch_name")
+          .eq("branch_name", customer.branch_name);
+
+        if (pharmacistError) throw pharmacistError;
+        if (!pharmacists || pharmacists.length === 0) {
+          throw new Error("ไม่พบเภสัชกรของสาขานี้");
+        }
+
+        const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
+        const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+        const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "https://uhvcakajcdxkykopekgg.supabase.co";
+
+        if (!vapidPublicKey || !vapidPrivateKey) {
+          throw new Error("VAPID keys are missing");
+        }
+
+        webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+
+        const pharmacistIds = pharmacists.map((item) => item.id);
+
+        const { data: subscriptions, error: subscriptionError } = await supabase
+          .from("pharmacist_push_subscriptions")
+          .select("id, pharmacist_id, endpoint, p256dh, auth")
+          .in("pharmacist_id", pharmacistIds);
+
+        if (subscriptionError) throw subscriptionError;
+        if (!subscriptions || subscriptions.length === 0) {
+          throw new Error("ยังไม่มีเครื่องเภสัชกรที่เปิด Push Notification");
+        }
+
+        const { data: medication, error: medicationError } = await supabase
+          .from("medications")
+          .select("drug_name, strength")
+          .eq("id", order.medication_id)
+          .maybeSingle();
+
+        if (medicationError) throw medicationError;
+
+        const drugName = medication?.drug_name || "รายการยา";
+        const strength = medication?.strength ? ` ${medication.strength}` : "";
+
+        const payload = JSON.stringify({
+          title: "มีลูกค้ายืนยันสั่งยา",
+          body: `${customer.full_name} • ${drugName}${strength}`,
+          url: "/admin?tab=orders",
+        });
+
+        let successCount = 0;
+        const pushErrors: string[] = [];
+
+        for (const subscription of subscriptions) {
+          try {
+            await webpush.sendNotification({
+              endpoint: subscription.endpoint,
+              keys: {
+                p256dh: subscription.p256dh,
+                auth: subscription.auth,
+              },
+            }, payload);
+            successCount += 1;
+          } catch (pushError) {
+            const statusCode =
+              typeof pushError === "object" && pushError && "statusCode" in pushError
+                ? Number((pushError as { statusCode?: number }).statusCode)
+                : null;
+
+            const message = pushError instanceof Error ? pushError.message : "Push ไม่สำเร็จ";
+            pushErrors.push(message);
+            console.error("CONFIRM PUSH ERROR:", pushError);
+
+            if (statusCode === 404 || statusCode === 410) {
+              await supabase
+                .from("pharmacist_push_subscriptions")
+                .delete()
+                .eq("id", subscription.id);
+            }
+          }
+        }
+
+        pushNotificationSent = successCount > 0;
+        if (!pushNotificationSent) {
+          pushNotificationError = pushErrors[0] || "ส่ง Push ไม่สำเร็จทุกอุปกรณ์";
+        }
+      } catch (pushError) {
+        pushNotificationError = pushError instanceof Error ? pushError.message : "ส่ง Push ไม่สำเร็จ";
+        console.error("CONFIRM ORDER PUSH ERROR:", pushError);
+      }
+
+      return json({
         success: true,
         order: updatedOrder,
-    });
+        push_notification_sent: pushNotificationSent,
+        push_notification_error: pushNotificationError,
+      });
     }
+
     // ==============================
     // ACTION : REGISTER LINE USER
     // ==============================
